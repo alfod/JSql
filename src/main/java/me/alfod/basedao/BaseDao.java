@@ -859,9 +859,9 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
      * @return Page<Po>
      */
     @SuppressWarnings("unchecked")
-    public Page<BO> getPageByCondition(PO co, PageParam pageParam) {
+    public Page<BO> getPageByCondition(PO co, com.gaosi.api.common.basedao.PageParam pageParam) {
         if (pageParam == null) {
-            pageParam = new PageParam(defaultPageNumber, defaultPageSize, defaultSortOrder);
+            pageParam = new com.gaosi.api.common.basedao.PageParam(defaultPageNumber, defaultPageSize, defaultSortOrder);
         }
         String querySql =  SELECT_ALL_FROM_SQL + getWhereSql(co) + getSqlByPageInfo(pageParam);
         List<BO> boList = commonMysqlClient.query(querySql, getPara(co), new BaseDaoRowMapper());
@@ -910,7 +910,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
      * @param pageInfo pageInfo
      * @return sample " ORDER BY ${poAliasName}.id"
      */
-    protected String getSqlByPageInfo(PageParam pageInfo) {
+    protected String getSqlByPageInfo(com.gaosi.api.common.basedao.PageParam pageInfo) {
         if (pageInfo == null) {
             return "";
         }
