@@ -1,4 +1,4 @@
-package me.alfod.basedao;
+package com.gaosi.api.common.basedao;
 
 import com.aixuexi.thor.util.Page;
 import com.google.common.collect.Lists;
@@ -345,7 +345,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
             }
             insertSql.append(columnName);
             values.add(value);
-                insertSql.append(",");
+            insertSql.append(",");
         }
         insertSql.deleteCharAt(insertSql.length() - 1);
         insertSql.append(") values ").append(SQLUtil.sizeToUnknown(values.size()));
@@ -368,7 +368,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
     }
 
     public int save(final PO po) {
-       // final PO po = boToPo(bo);
+        // final PO po = boToPo(bo);
         if(po==null || getValue(po,"id")!=null){
             return 0;
         }
@@ -448,11 +448,11 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
                     }
 
                     if (poFields[i].getType() == Long.class) {
-                                poFields[i].set(po, 0L);
+                        poFields[i].set(po, 0L);
                     }
 
                     if (poFields[i].getType() == Double.class) {
-                                poFields[i].set(po, 0.0);
+                        poFields[i].set(po, 0.0);
                     }
 
                     if ((poFields[i].getType() == Integer.class
@@ -584,9 +584,9 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
      * @param enableNull true:all para, false:not null
      * @return [value1, value2]
      */
-    private Object[] getPara(PO co) {
+    private List<Object> getParaList(PO co) {
         if (co == null) {
-            return new Object[0];
+            return new ArrayList<>();
         }
         List<Object> objectList = new ArrayList<>(poFields.length);
         try {
@@ -599,7 +599,11 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         } catch (IllegalAccessException e) {
             logger.error(e.getMessage());
         }
-        return objectList.toArray();
+        return objectList;
+    }
+
+    private Object[] getPara(PO co) {
+        return getParaList(co).toArray();
     }
 
 
@@ -852,19 +856,43 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         return commonMysqlClient.query(querySql, ids, new BaseDaoRowMapper());
     }
 
+    public Page<BO> getPageByCondition(PO co, PageParam pageParam) {
 
+        return getPageByCondition(co, pageParam, null);
+    }
     /**
      * @param co       co
      * @param pageParam pageInfo
      * @return Page<Po>
      */
     @SuppressWarnings("unchecked")
-    public Page<BO> getPageByCondition(PO co, com.gaosi.api.common.basedao.PageParam pageParam) {
+    public Page<BO> getPageByCondition(PO co, PageParam pageParam, QueryEnhance queryEnhance) {
         if (pageParam == null) {
-            pageParam = new com.gaosi.api.common.basedao.PageParam(defaultPageNumber, defaultPageSize, defaultSortOrder);
+            pageParam = new PageParam(defaultPageNumber, defaultPageSize, defaultSortOrder);
         }
-        String querySql =  SELECT_ALL_FROM_SQL + getWhereSql(co) + getSqlByPageInfo(pageParam);
-        List<BO> boList = commonMysqlClient.query(querySql, getPara(co), new BaseDaoRowMapper());
+        StringBuilder selectSql = new StringBuilder("select ").append(BASE_COLUMN);
+        StringBuilder fromSql = new StringBuilder(FROM_SQL);
+        StringBuilder whereSql = new StringBuilder(getWhereSql(co));
+        StringBuilder orderSql = new StringBuilder(getSqlByPageInfo(pageParam));
+
+        List<Object> paras = getParaList(co);
+        if (queryEnhance != null) {
+            if (queryEnhance.getSelectSql() != null) {
+                selectSql.append(queryEnhance.getSelectSql());
+            }
+            if (queryEnhance.getJoinSql() != null) {
+                fromSql.append(queryEnhance.getJoinSql());
+            }
+            if (queryEnhance.getWhereSql() != null) {
+                whereSql.append(queryEnhance.getWhereSql());
+                paras.addAll(queryEnhance.getWhereParam());
+            }
+            if (queryEnhance.getOrderSql() != null) {
+                orderSql.append(queryEnhance.getOrderSql());
+            }
+        }
+        String querySql = selectSql.append(fromSql).append(whereSql).append(orderSql).toString();
+        List<BO> boList = commonMysqlClient.query(querySql, paras.toArray(), new BaseDaoRowMapper());
         //查询总记录数
         int rows = countByCondition(co);
         //封装返回值
@@ -910,7 +938,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
      * @param pageInfo pageInfo
      * @return sample " ORDER BY ${poAliasName}.id"
      */
-    protected String getSqlByPageInfo(com.gaosi.api.common.basedao.PageParam pageInfo) {
+    protected String getSqlByPageInfo(PageParam pageInfo) {
         if (pageInfo == null) {
             return "";
         }
