@@ -1,4 +1,6 @@
-package me.alfod.basedao;
+package com.gaosi.api.common.basedao;
+
+import me.alfod.basedao.ObjectAssembler;
 
 import java.io.Serializable;
 import java.util.List;
@@ -37,6 +39,51 @@ public class QueryEnhance<BO> implements Serializable {
      */
     private List<Object> whereParam;
 
+    public QueryEnhance() {
+    }
+
+    public QueryEnhance(String selectSql, String joinSql, String whereSql, List<Object> whereParam, ObjectAssembler<BO> objectAssembler) {
+        this.selectSql = selectSql;
+        this.joinSql = joinSql;
+        this.whereSql = whereSql;
+        this.whereParam = whereParam;
+        this.objectAssembler = objectAssembler;
+    }
+
+    public QueryEnhance(String selectSql, String joinSql, String whereSql, List<Object> whereParam, String orderSql, ObjectAssembler<BO> objectAssembler) {
+
+        this.selectSql = selectSql;
+        this.joinSql = joinSql;
+        this.whereSql = whereSql;
+        this.whereParam = whereParam;
+        this.orderSql = orderSql;
+        this.objectAssembler = objectAssembler;
+    }
+
+    public QueryEnhance(String orderSql) {
+
+        this.orderSql = orderSql;
+    }
+
+    public QueryEnhance(String whereSql, List<Object> whereParam) {
+
+        this.whereSql = whereSql;
+        this.whereParam = whereParam;
+    }
+
+    public QueryEnhance(String selectSql, String joinSql, String whereSql, List<Object> whereParam) {
+
+        this.selectSql = selectSql;
+        this.joinSql = joinSql;
+        this.whereSql = whereSql;
+        this.whereParam = whereParam;
+    }
+
+    public QueryEnhance(String selectSql, String joinSql) {
+        this.selectSql = selectSql;
+
+        this.joinSql = joinSql;
+    }
 
     /**
      * 拼接到order by 后面

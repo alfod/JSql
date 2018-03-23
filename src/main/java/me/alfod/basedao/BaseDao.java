@@ -2,6 +2,10 @@ package com.gaosi.api.common.basedao;
 
 import com.aixuexi.thor.util.Page;
 import com.google.common.collect.Lists;
+import me.alfod.basedao.CommonMysqlClient;
+import me.alfod.basedao.ObjectAssembler;
+import me.alfod.basedao.QueryEnhance;
+import me.alfod.basedao.SortTypeEnum;
 import org.apache.commons.collections4.MapUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -856,7 +860,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         return commonMysqlClient.query(querySql, ids, new BaseDaoRowMapper());
     }
 
-    public Page<BO> getPageByCondition(PO co, PageParam pageParam) {
+    public Page<BO> getPageByCondition(PO co, com.gaosi.api.common.basedao.PageParam pageParam) {
 
         return getPageByCondition(co, pageParam, null);
     }
@@ -866,9 +870,9 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
      * @return Page<Po>
      */
     @SuppressWarnings("unchecked")
-    public Page<BO> getPageByCondition(PO co, PageParam pageParam, QueryEnhance queryEnhance) {
+    public Page<BO> getPageByCondition(PO co, com.gaosi.api.common.basedao.PageParam pageParam, QueryEnhance queryEnhance) {
         if (pageParam == null) {
-            pageParam = new PageParam(defaultPageNumber, defaultPageSize, defaultSortOrder);
+            pageParam = new com.gaosi.api.common.basedao.PageParam(defaultPageNumber, defaultPageSize, defaultSortOrder);
         }
         StringBuilder selectSql = new StringBuilder("select ").append(BASE_COLUMN);
         StringBuilder fromSql = new StringBuilder(FROM_SQL);
@@ -876,6 +880,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         StringBuilder orderSql = new StringBuilder(getSqlByPageInfo(pageParam));
 
         List<Object> paras = getParaList(co);
+        BaseDaoRowMapper mapper = new BaseDaoRowMapper();
         if (queryEnhance != null) {
             if (queryEnhance.getSelectSql() != null) {
                 selectSql.append(queryEnhance.getSelectSql());
@@ -890,9 +895,13 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
             if (queryEnhance.getOrderSql() != null) {
                 orderSql.append(queryEnhance.getOrderSql());
             }
+            if (queryEnhance.getObjectAssembler() != null) {
+                mapper.setObjectAssembler(queryEnhance.getObjectAssembler());
+            }
         }
         String querySql = selectSql.append(fromSql).append(whereSql).append(orderSql).toString();
-        List<BO> boList = commonMysqlClient.query(querySql, paras.toArray(), new BaseDaoRowMapper());
+
+        List<BO> boList = commonMysqlClient.query(querySql, paras.toArray(), mapper);
         //查询总记录数
         int rows = countByCondition(co);
         //封装返回值
@@ -938,7 +947,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
      * @param pageInfo pageInfo
      * @return sample " ORDER BY ${poAliasName}.id"
      */
-    protected String getSqlByPageInfo(PageParam pageInfo) {
+    protected String getSqlByPageInfo(com.gaosi.api.common.basedao.PageParam pageInfo) {
         if (pageInfo == null) {
             return "";
         }
@@ -1018,13 +1027,37 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
     /**
      * 处理ORM
      */
-    public class BaseDaoRowMapper implements org.springframework.jdbc.core.RowMapper {
+    public class BaseDaoRowMapper implements org.springframework.jdbc.core.RowMapper<BO> {
+
+        private ObjectAssembler<BO> objectAssembler;
+
+        public BaseDaoRowMapper(ObjectAssembler<BO> objectAssembler) {
+            this.objectAssembler = objectAssembler;
+        }
+
+        public BaseDaoRowMapper() {
+
+        }
+
+        public ObjectAssembler<BO> getObjectAssembler() {
+            return objectAssembler;
+        }
+
+        public void setObjectAssembler(ObjectAssembler<BO> objectAssembler) {
+            this.objectAssembler = objectAssembler;
+        }
+
         @Override
         public BO mapRow(ResultSet resultSet, int i) throws SQLException {
             try {
                 PO po = poClassType.newInstance();
                 handleMapping(resultSet, po); //处理ORM
-                return poToBo(po);
+                BO bo = poToBo(po);
+
+                if (objectAssembler != null) {
+                    objectAssembler.assemble(resultSet, bo);
+                }
+                return bo;
             } catch (InstantiationException | IllegalAccessException e) {
                 logger.error(e.getMessage());
             }
