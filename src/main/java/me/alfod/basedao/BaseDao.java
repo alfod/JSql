@@ -3,6 +3,7 @@ package me.alfod.basedao;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.PreparedStatementCreator;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
@@ -69,7 +70,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
     private boolean operatorIdExist = false;
 
     @Autowired
-    protected CommonMysqlClient commonMysqlClient;
+    protected JdbcTemplate jdbcTemplate;
 
     @SuppressWarnings("unchecked")
     public BaseDao() {
@@ -318,7 +319,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         }
     }
 
-    public int saveSelective(final PO po) {
+    public int save(final PO po) {
         StringBuilder insertSql = new StringBuilder("insert into " + FULL_TABLE_NAME + "( ");
         final List<Object> values = new ArrayList<>(poFields.length);
         Object value;
@@ -348,7 +349,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         insertSql.append(") values ").append(SqlUtils.GetPlaceHolders(values.size()));
         final String insertSqlStr = insertSql.toString();
         KeyHolder keyHolder = new GeneratedKeyHolder();
-        commonMysqlClient.update(new PreparedStatementCreator() {
+        jdbcTemplate.update(new PreparedStatementCreator() {
             @Override
             public PreparedStatement createPreparedStatement(Connection con) throws SQLException {
                 PreparedStatement ps = con.prepareStatement(insertSqlStr, Statement.RETURN_GENERATED_KEYS);
@@ -361,69 +362,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         int id = keyHolder.getKey().intValue();
         setValue(po, "id", id);
         return id;
-//        return commonMysqlClient.insertAndGetKey();
-    }
-
-    public int save(final PO po) {
-        // final PO po = boToPo(bo);
-        if(po==null || getValue(po,"id")!=null){
-            return 0;
-        }
-        initNotNull(po);
-        int id = commonMysqlClient.insertAndGetKey(new PreparedStatementCreator() {
-            @Override
-            public PreparedStatement createPreparedStatement(Connection con) throws SQLException {
-                PreparedStatement ps = con.prepareStatement(INSERT_SQL, Statement.RETURN_GENERATED_KEYS);
-                try {
-                    int index = 1;
-                    Object value;
-                    for (int i = 0; i < poFields.length; i++) {
-                        if ((value = poFields[i].get(po)) != null) {
-                            if (poFields[i].getType() == String.class) {
-                                ps.setString(index++, (String) value);
-                            }
-                            if (poFields[i].getType() == Integer.class) {
-                                if (!poColumnName[i].equals("id")
-                                        && !poColumnName[i].equals("deleted")) {
-                                    ps.setInt(index++, (Integer) value);
-                                }
-                            }
-                            if (poFields[i].getType() == Long.class) {
-                                ps.setLong(index++, (Long) value);
-                            }
-                            if (poFields[i].getType() == Double.class) {
-                                ps.setDouble(index++, (Double) value);
-                            }
-                            if (poFields[i].getType() == BigDecimal.class) {
-                                ps.setBigDecimal(index++, (BigDecimal) value);
-                            }
-                            if (poFields[i].getType() == Boolean.class) {
-                                ps.setBoolean(index++, (Boolean) value);
-                            }
-                            if (poFields[i].getType() == Byte.class) {
-                                ps.setByte(index++, (Byte) value);
-                            }
-                            if (poFields[i].getType() == Float.class) {
-                                ps.setFloat(index++, (Float) value);
-                            }
-                            if (poFields[i].getType() == Date.class) {
-                                if (timeColumns.contains(poColumnName[i])) {
-                                    ps.setTimestamp(index++, getCurrentTime());
-                                } else {
-                                    ps.setTimestamp(index++, new Timestamp(((Date) value).getTime()));
-                                }
-                            }
-                        }
-                    }
-                } catch (IllegalAccessException e) {
-                    logger.error(e.getMessage());
-                }
-
-                return ps;
-            }
-        });
-        setValue(po, "id", id);
-        return id;
+//        return jdbcTemplate.insertAndGetKey();
     }
 
     protected void initNotNull(PO po) {
@@ -491,7 +430,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         String sql = "UPDATE " + FULL_TABLE_NAME + " SET " + updateSql + " WHERE id = ? ";
 
         para.add(getValue(po, "id"));
-        return commonMysqlClient.update(sql, para.toArray());
+        return jdbcTemplate.update(sql, para.toArray());
     }
 
 
@@ -515,7 +454,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         StringBuilder whereSql = new StringBuilder(" WHERE 1=1 ");
         handleWhereInfoFromList(po, para, whereSql, whereList);
         String sql = "UPDATE " + FULL_TABLE_NAME + " SET " + updateSql + whereSql.toString();
-        return commonMysqlClient.update(sql, para.toArray());
+        return jdbcTemplate.update(sql, para.toArray());
     }
 
     /**
@@ -539,7 +478,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
     @Deprecated
     public List<BO> getListByCondition(PO co) {
         String  querySql = SELECT_ALL_FROM_SQL + getWhereSql(co);
-        return commonMysqlClient.query(querySql, getPara(co), new BaseDaoRowMapper());
+        return jdbcTemplate.query(querySql, getPara(co), new BaseDaoRowMapper());
     }
 
     /**
@@ -611,7 +550,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         Object[] para = getPara(po);
         sql.append(";");
         //step 3:查询结果集
-        Map<String, Object> queryForMap = commonMysqlClient.queryForMap(sql.toString(), para);
+        Map<String, Object> queryForMap = jdbcTemplate.queryForMap(sql.toString(), para);
 
         return (int)(queryForMap.get("count"));
     }
@@ -630,7 +569,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         }
         deleteSql += " WHERE id = ?  ";
         paras.add(id);
-        return commonMysqlClient.update(deleteSql, paras.toArray());
+        return jdbcTemplate.update(deleteSql, paras.toArray());
     }
 
 
@@ -638,7 +577,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
     public BO getById(Integer id) {
         String sql = SELECT_ALL_FROM_SQL + " WHERE " + deleteFilterSqlTableName +
                 " and " + TABLE_POINT + "id = ?;";
-        List<BO> sqlResult = commonMysqlClient.query(sql, new Object[]{id}, new BaseDaoRowMapper());
+        List<BO> sqlResult = jdbcTemplate.query(sql, new Object[]{id}, new BaseDaoRowMapper());
         return sqlResult.size() == 0 ? null : sqlResult.get(0);
     }
 
@@ -675,7 +614,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         }
         String sql = SELECT_ALL_FROM_SQL + " WHERE " + deleteFilterSqlTableName +
                 " and " + whereSql.toString();
-        List<BO> sqlResult = commonMysqlClient.query(sql, paras.toArray(), new BaseDaoRowMapper());
+        List<BO> sqlResult = jdbcTemplate.query(sql, paras.toArray(), new BaseDaoRowMapper());
         return sqlResult;
     }
 
@@ -685,7 +624,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         final String para = SqlUtils.GetPlaceHolders(ids.size());
         final String querySql = "SELECT " + BASE_COLUMN + FROM_SQL + " where " + deleteFilterSqlTableName +
                 " and " + TABLE_POINT + "id in " + para + ";";
-        return commonMysqlClient.query(querySql, ids.toArray(), new BaseDaoRowMapper());
+        return jdbcTemplate.query(querySql, ids.toArray(), new BaseDaoRowMapper());
     }
 
     public <T extends PO> int[] batchSave(List<T> boList) {
@@ -705,7 +644,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
             initNotNull(po);
             paramsList.add(getInsertParasValues(po));
         }
-        return commonMysqlClient.batchInsert(INSERT_SQL, paramsList);
+        return jdbcTemplate.batchUpdate(INSERT_SQL, paramsList);
     }
 
     private Object[] getInsertParasValues(PO po) {
@@ -784,7 +723,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
             initNotNull(po);
             paramsList.add(getUpdateValues(po, whereVariable));
         }
-        return commonMysqlClient.batchUpdate(updateDirectorySql, paramsList).length;
+        return jdbcTemplate.batchUpdate(updateDirectorySql, paramsList).length;
     }
 
 
@@ -802,7 +741,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
             initNotNull(po);
             paramsList.add(getUpdateValues(po, whereVariable));
         }
-        return commonMysqlClient.batchUpdate(updateSql, paramsList).length;
+        return jdbcTemplate.batchUpdate(updateSql, paramsList).length;
 
     }
 
@@ -842,7 +781,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
             paramsList.add(paras.toArray());
             paras.remove(paras.size() - 1);
         }
-        return commonMysqlClient.batchUpdate(batchDeleteSqll, paramsList).length;
+        return jdbcTemplate.batchUpdate(batchDeleteSqll, paramsList).length;
     }
 
 
@@ -850,7 +789,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
     public List<BO> getListByIds(Integer... ids) {
         final String para = SqlUtils.GetPlaceHolders(ids.length);
         final String querySql = SELECT_ALL_FROM_SQL + " where " + deleteFilterSqlTableName + " and " + TABLE_POINT + "id in " + para + ";";
-        return commonMysqlClient.query(querySql, ids, new BaseDaoRowMapper());
+        return jdbcTemplate.query(querySql, ids, new BaseDaoRowMapper());
     }
 
     public Page<BO> getPageByCondition(PO co, com.gaosi.api.common.basedao.PageParam pageParam) {
@@ -894,7 +833,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         }
         String querySql = selectSql.append(fromSql).append(whereSql).append(orderSql).toString();
 
-        List<BO> boList = commonMysqlClient.query(querySql, paras.toArray(), mapper);
+        List<BO> boList = jdbcTemplate.query(querySql, paras.toArray(), mapper);
         //查询总记录数
         int rows = countByCondition(co);
         //封装返回值
