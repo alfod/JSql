@@ -863,7 +863,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
      * @return Page<Po>
      */
     @SuppressWarnings("unchecked")
-    public Page<BO> getPageByCondition(PO co, com.gaosi.api.common.basedao.PageParam pageParam, com.gaosi.api.common.basedao.QueryEnhance queryEnhance) {
+    public Page<BO> getPageByCondition(PO co, com.gaosi.api.common.basedao.PageParam pageParam, QueryEnhance queryEnhance) {
         if (pageParam == null) {
             pageParam = new com.gaosi.api.common.basedao.PageParam(defaultPageNumber, defaultPageSize, defaultSortOrder);
         }

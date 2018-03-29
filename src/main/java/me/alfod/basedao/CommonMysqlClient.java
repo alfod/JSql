@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Required;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.BatchPreparedStatementSetter;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.PreparedStatementCreator;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -38,7 +39,7 @@ public class CommonMysqlClient {
 //    private JdbcTemplate masterJdbcTemplate;
 //    private JdbcTemplate[] slaveJdbcTemplateArr;
     @Resource
-    private JdbcRowSet myJdbcTemplate;
+    private JdbcTemplate myJdbcTemplate;
 
     //1、如果是写操作或者没有配置从库，则读写主库。2、配置主从库时，读从库。3、多从库时，随机读。
 //    private JdbcTemplate getJdbcTemplate(boolean isWrite) {
