@@ -345,7 +345,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
             insertSql.append(",");
         }
         insertSql.deleteCharAt(insertSql.length() - 1);
-        insertSql.append(") values ").append(SQLUtil.sizeToUnknown(values.size()));
+        insertSql.append(") values ").append(SqlUtils.GetPlaceHolders(values.size()));
         final String insertSqlStr = insertSql.toString();
         KeyHolder keyHolder = new GeneratedKeyHolder();
         commonMysqlClient.update(new PreparedStatementCreator() {
@@ -613,7 +613,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         //step 3:查询结果集
         Map<String, Object> queryForMap = commonMysqlClient.queryForMap(sql.toString(), para);
 
-        return MapUtils.getIntValue(queryForMap, "count");
+        return (int)(queryForMap.get("count"));
     }
 
 
@@ -657,17 +657,17 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
     @SuppressWarnings("unchecked")
     public List<BO> getListByKeyValue(Object... values) {
         if (values.length == 0 || values.length % 2 != 0) {
-            return Lists.newArrayList();
+            return new ArrayList();
         }
         StringBuilder whereSql = new StringBuilder(" 1= 1 ");
         Object value;
-        List<Object> paras = Lists.newLinkedList();
+        List<Object> paras =new LinkedList<>();
         for (int i = 0; i < values.length / 2; ++i) {
             whereSql.append(" and ").append(TABLE_POINT).append("`").append(values[2 * i]).append("`");
             value = values[2 * i + 1];
             if (value instanceof Collection) {
                 paras.addAll((Collection) value);
-                whereSql.append(" in ").append(SQLUtil.sizeToUnknown(((Collection) value).size()));
+                whereSql.append(" in ").append(SqlUtils.GetPlaceHolders(((Collection) value).size()));
             } else {
                 paras.add(value);
                 whereSql.append("=? ");
@@ -682,7 +682,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
 
     @SuppressWarnings("unchecked")
     public List<BO> getListByIds(List<Integer> ids) {
-        final String para = SQLUtil.sizeToUnknown(ids.size());
+        final String para = SqlUtils.GetPlaceHolders(ids.size());
         final String querySql = "SELECT " + BASE_COLUMN + FROM_SQL + " where " + deleteFilterSqlTableName +
                 " and " + TABLE_POINT + "id in " + para + ";";
         return commonMysqlClient.query(querySql, ids.toArray(), new BaseDaoRowMapper());
@@ -848,7 +848,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
 
     @SuppressWarnings("unchecked")
     public List<BO> getListByIds(Integer... ids) {
-        final String para = SQLUtil.sizeToUnknown(ids.length);
+        final String para = SqlUtils.GetPlaceHolders(ids.length);
         final String querySql = SELECT_ALL_FROM_SQL + " where " + deleteFilterSqlTableName + " and " + TABLE_POINT + "id in " + para + ";";
         return commonMysqlClient.query(querySql, ids, new BaseDaoRowMapper());
     }
@@ -921,18 +921,6 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         return new Timestamp(new Date().getTime());
     }
 
-//    /**
-//     * @param co
-//     * @param pageInfo
-//     * @return
-//     */
-//    public int countByPage(PO co, PageParam pageInfo) {
-//        final boolean enableNull = false;
-//        String querySql = "SELECT COUNT(DISTINCT " + FULL_TABLE_NAME + ".id) AS count " + FROM_SQL + getWhereSql(co) + getSqlByPageInfo(pageInfo);
-//        //step 3:查询结果集
-//        Map<String, Object> queryForMap = commonMysqlClient.queryForMap(querySql, getPara(co));
-//        return MapUtils.getIntValue(queryForMap, "count");
-//    }
 
     /**
      * 处理排序条件
@@ -944,23 +932,21 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         if (pageInfo == null) {
             return "";
         }
-        String sortSql = null;
-        if (pageInfo.getOrderBy() == null
-                || SortTypeEnum.valueOf(pageInfo.getOrderBy()) == null) {
-            if (pageInfo.getSortOrder() == null
-                    || (sortSql=SortTypeEnum.getSqlBySortId(pageInfo.getSortOrder())) == null) {
-                sortSql = SortTypeEnum.getSqlBySortId(defaultSortOrder);
-            }
-        } else {
-            sortSql = SortTypeEnum.valueOf(pageInfo.getOrderBy()).getSortSql();
+        String sortSql = "";
+        if (pageInfo.getSortOrder() != null) {
+            sortSql += SortTypeEnum.getSqlBySortId(pageInfo.getSortOrder());
         }
-
         if (pageInfo.getOrderBy() != null && pageInfo.getOrderBy().length() > 4) {
             if (sortSql != null && sortSql.length() > 4) {
                 sortSql += ",";
             }
             sortSql += pageInfo.getOrderBy();
         }
+
+        if (sortSql.length() < 1) {
+            sortSql = SortTypeEnum.getSqlBySortId(defaultSortOrder);
+        }
+
         if (pageInfo.getPageSize() == null
                 || pageInfo.getPageSize() < 0) {
             pageInfo.setPageSize(defaultPageSize);
@@ -972,12 +958,11 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         }
 
         StringBuilder sql = new StringBuilder(" ");
-        sql.append(" ORDER BY ").append(TABLE_POINT).append(sortSql);
+        sql.append(" ORDER BY ").append(sortSql);
         sql.append(" limit ").append((pageInfo.getPageNum() - 1) * pageInfo.getPageSize()).append(",").append(pageInfo.getPageSize());
 
         return sql.toString();
     }
-
 
     /**
      * 处理修改信息
