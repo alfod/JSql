@@ -1,4 +1,4 @@
-package com.gaosi.api.common.basedao;
+package me.alfod.basedao;
 
 import me.alfod.basedao.ObjectAssembler;
 

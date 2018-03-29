@@ -15,6 +15,7 @@ import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
 
 import javax.annotation.Resource;
+import javax.sql.rowset.JdbcRowSet;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -37,7 +38,7 @@ public class CommonMysqlClient {
 //    private JdbcTemplate masterJdbcTemplate;
 //    private JdbcTemplate[] slaveJdbcTemplateArr;
     @Resource
-    private MyJdbcTemplate myJdbcTemplate;
+    private JdbcRowSet myJdbcTemplate;
 
     //1、如果是写操作或者没有配置从库，则读写主库。2、配置主从库时，读从库。3、多从库时，随机读。
 //    private JdbcTemplate getJdbcTemplate(boolean isWrite) {
