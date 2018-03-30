@@ -25,7 +25,6 @@ public class PageParam  implements Serializable{
     /**
      * 排序规则 enum SortTypeEnum
      */
-    @Deprecated
     private Integer sortOrder;
 
     /**
