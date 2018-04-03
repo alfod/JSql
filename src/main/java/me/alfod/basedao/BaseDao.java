@@ -441,7 +441,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
      * @param whereList where list
      * @return count
      */
-    public int updateByColumn(PO po, List<String> whereList) {
+    public int updateByColumn(PO po, Collection<String> whereList) {
         //PO po = boToPo(bo);
         StringBuilder updateSql = new StringBuilder("");
         //params
@@ -463,7 +463,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
      * @param para para
      * @param map  map
      */
-    protected void handleWhereInfoFromList(PO po, List<Object> para, StringBuilder whereSql, List<String> where) {
+    protected void handleWhereInfoFromList(PO po, List<Object> para, StringBuilder whereSql, Collection<String> where) {
         Object o = null;
         for (String s : where) {
             if (poFieldNameMap.get(s) != null
@@ -475,7 +475,6 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
     }
 
     @SuppressWarnings("unchecked")
-    @Deprecated
     public List<BO> getListByCondition(PO co) {
         String  querySql = SELECT_ALL_FROM_SQL + getWhereSql(co);
         return jdbcTemplate.query(querySql, getPara(co), new BaseDaoRowMapper());
@@ -620,14 +619,14 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
 
 
     @SuppressWarnings("unchecked")
-    public List<BO> getListByIds(List<Integer> ids) {
+    public List<BO> getListByIds(Collection<Integer> ids) {
         final String para = SqlUtils.GetPlaceHolders(ids.size());
         final String querySql = "SELECT " + BASE_COLUMN + FROM_SQL + " where " + deleteFilterSqlTableName +
                 " and " + TABLE_POINT + "id in " + para + ";";
         return jdbcTemplate.query(querySql, ids.toArray(), new BaseDaoRowMapper());
     }
 
-    public <T extends PO> int[] batchSave(List<T> boList) {
+    public <T extends PO> int[] batchSave(Collection<T> boList) {
         // List<PO> poList = listBoToPo(boList);
         Iterator<T> it = boList.iterator();
         PO poTmp = null;
@@ -711,7 +710,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
 
     }
 
-    public <T extends PO> int batchUpdateById(List<T> poList) {
+    public <T extends PO> int batchUpdateById(Collection<T> poList) {
         if (CollectionUtils.isEmpty(poList)) {
             return 0;
         }
@@ -733,7 +732,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
      * @param whereVariable whereVariable
      * @return n
      */
-    public int batchUpdateByColumns(List<PO> poList, List<String> whereVariable) {
+    public int batchUpdateByColumns(Collection<PO> poList, List<String> whereVariable) {
         //List<PO> poList = listBoToPo(boList);
         List<Object[]> paramsList = new ArrayList<>();
         String updateSql = getUpdateSql(whereVariable) + getWhereSql(whereVariable);
@@ -785,12 +784,6 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
     }
 
 
-    @SuppressWarnings("unchecked")
-    public List<BO> getListByIds(Integer... ids) {
-        final String para = SqlUtils.GetPlaceHolders(ids.length);
-        final String querySql = SELECT_ALL_FROM_SQL + " where " + deleteFilterSqlTableName + " and " + TABLE_POINT + "id in " + para + ";";
-        return jdbcTemplate.query(querySql, ids, new BaseDaoRowMapper());
-    }
 
     public Page<BO> getPageByCondition(PO co, com.gaosi.api.common.basedao.PageParam pageParam) {
 
