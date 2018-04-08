@@ -19,7 +19,9 @@ import java.sql.*;
 import java.util.*;
 import java.util.Date;
 
+import static me.alfod.basedao.SqlUtils.camelToUnderLine;
 import static me.alfod.basedao.SqlUtils.getCurrentTime;
+import static me.alfod.basedao.SqlUtils.getFieldColumnName;
 
 /**
  * /@author Yang Dong
@@ -40,12 +42,10 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
     protected final String SELECT_ALL_FROM_SQL;
     protected final String INSERT_SQL;
 
-
-    private final Field[] poFields;
-
     private final Class<PO> poClassType;
     private final Class<BO> boClassType;
     private final Field[] boFields;
+    private final Field[] poFields;
     private final String[] poColumnName;
     private final String[] boColumnName;
 
@@ -200,21 +200,6 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
     }
 
 
-    private String getFieldColumnName(Field field) {
-        field.setAccessible(true);
-        if (field.isAnnotationPresent(Column.class)) {
-            //init columns name of po
-            Column column = field.getAnnotation(Column.class);
-            if (column.name().length() > 0) {
-                return column.name();
-            } else {
-                //init columns name of po
-                return camelToUnderLine(field.getName());
-            }
-        }
-        //init columns name of po
-        return camelToUnderLine(field.getName());
-    }
 
     private Object getValue(PO po, String column) {
         try {
@@ -262,63 +247,6 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
             }
         }
         return fieldList.toArray(new Field[]{});
-    }
-
-    private String camelToUnderLine(String s) {
-        final String UNDER_LINE = "_";
-        StringBuilder camelCase = new StringBuilder("");
-        for (int i = 0; i < s.length(); i++) {
-            if (Character.isUpperCase(s.charAt(i))) {
-                if (i != 0) {
-                    camelCase.append(UNDER_LINE);
-                }
-                camelCase.append(Character.toLowerCase(s.charAt(i)));
-            } else {
-                camelCase.append(s.charAt(i));
-            }
-        }
-        return camelCase.toString();
-    }
-
-
-    /**
-     * 处理ORM
-     *
-     * @param resultSet resultSet
-     * @param po        bo
-     */
-    private void handleMapping(ResultSet resultSet, PO po) throws SQLException {
-        Field field;
-        try {
-            for (int i = 0; i < poColumnName.length; i++) {
-                field = poFields[i];
-                //close permission validation to enhance performance
-                field.setAccessible(true);
-
-                if (field.getType() == Integer.class) {
-                    field.set(po, resultSet.getInt(poColumnName[i]));
-                }
-                if (field.getType() == String.class) {
-                    field.set(po, resultSet.getString(poColumnName[i]));
-                }
-                if (field.getType() == Date.class) {
-                    field.set(po, resultSet.getTimestamp(poColumnName[i]));
-                }
-                if (field.getType() == Long.class) {
-                    field.set(po, resultSet.getLong(poColumnName[i]));
-                }
-                if (field.getType() == Double.class) {
-                    field.set(po, resultSet.getDouble(poColumnName[i]));
-                }
-                if (field.getType() == BigDecimal.class) {
-                    field.set(po, resultSet.getBigDecimal(poColumnName[i]));
-                }
-
-            }
-        } catch (IllegalAccessException e) {
-            logger.error(e.getMessage());
-            e.printStackTrace();
-        }
     }
 
     public int save(final PO po) {
@@ -945,10 +873,6 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         }
     }
 
-    private void handleEnchance(StringBuilder sql, List<Object> para, BaseDaoRowMapper rowMapper, ObjectAssembler<BO> assembler) {
-
-    }
-
     /**
      * 处理ORM
      */
@@ -976,9 +900,19 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         public BO mapRow(ResultSet resultSet, int i) throws SQLException {
             try {
                 PO po = poClassType.newInstance();
-                handleMapping(resultSet, po); //处理ORM
-                BO bo = poToBo(po);
+                Field field;
+                try {
+                    for (int j = 0; j < poColumnName.length; j++) {
+                        field = poFields[j];
+                        //close permission validation to enhance performance
+                        field.setAccessible(true);
+                        field.set(po, resultSet.getObject(poColumnName[j]));
+                    }
+                } catch (IllegalAccessException e) {
+                    logger.error(e.getMessage());
 
+                }
+                BO bo = poToBo(po);
                 if (objectAssembler != null) {
                     objectAssembler.assemble(resultSet, bo);
                 }
