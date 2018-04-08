@@ -348,7 +348,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
             insertSql.append(",");
         }
         insertSql.deleteCharAt(insertSql.length() - 1);
-        insertSql.append(") values ").append(SqlUtils.GetPlaceHolders(values.size()));
+        insertSql.append(") values ").append(SqlUtils.getPlaceHolders(values.size()));
         final String insertSqlStr = insertSql.toString();
         KeyHolder keyHolder = new GeneratedKeyHolder();
         jdbcTemplate.update(new PreparedStatementCreator() {
@@ -607,7 +607,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
             value = values[2 * i + 1];
             if (value instanceof Collection) {
                 paras.addAll((Collection) value);
-                whereSql.append(" in ").append(SqlUtils.GetPlaceHolders(((Collection) value).size()));
+                whereSql.append(" in ").append(SqlUtils.getPlaceHolders(((Collection) value).size()));
             } else {
                 paras.add(value);
                 whereSql.append("=? ");
@@ -622,7 +622,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
 
     @SuppressWarnings("unchecked")
     public List<BO> getListByIds(Collection<Integer> ids) {
-        final String para = SqlUtils.GetPlaceHolders(ids.size());
+        final String para = SqlUtils.getPlaceHolders(ids.size());
         final String querySql = "SELECT " + BASE_COLUMN + FROM_SQL + " where " + deleteFilterSqlTableName +
                 " and " + TABLE_POINT + "id in " + para + ";";
         return jdbcTemplate.query(querySql, ids.toArray(), new BaseDaoRowMapper());
@@ -805,27 +805,11 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         StringBuilder fromSql = new StringBuilder(FROM_SQL);
         StringBuilder whereSql = new StringBuilder(getWhereSql(co));
         StringBuilder orderSql = new StringBuilder(getSqlByPageInfo(pageParam));
-
         List<Object> paras = getParaList(co);
         BaseDaoRowMapper mapper = new BaseDaoRowMapper();
-        if (queryEnhance != null) {
-            if (queryEnhance.getSelectSql() != null) {
-                selectSql.append(queryEnhance.getSelectSql());
-            }
-            if (queryEnhance.getJoinSql() != null) {
-                fromSql.append(queryEnhance.getJoinSql());
-            }
-            if (queryEnhance.getWhereSql() != null) {
-                whereSql.append(queryEnhance.getWhereSql());
-                paras.addAll(queryEnhance.getWhereParam());
-            }
-            if (queryEnhance.getOrderSql() != null) {
-                orderSql.append(queryEnhance.getOrderSql());
-            }
-            if (queryEnhance.getObjectAssembler() != null) {
-                mapper.setObjectAssembler(queryEnhance.getObjectAssembler());
-            }
-        }
+
+        handleAssembler(selectSql, fromSql, whereSql, orderSql, paras, mapper, queryEnhance);
+
         String querySql = selectSql.append(fromSql).append(whereSql).append(orderSql).toString();
 
         List<BO> boList = jdbcTemplate.query(querySql, paras.toArray(), mapper);
@@ -851,7 +835,34 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         return resultData;
     }
 
+    private void handleAssembler(StringBuilder selectSql,
+                                 StringBuilder fromSql,
+                                 StringBuilder whereSql,
+                                 StringBuilder orderSql,
+                                 List<Object> paras,
+                                 BaseDaoRowMapper mapper,
+                                 QueryEnhance<BO> queryEnhance) {
 
+        if (queryEnhance != null) {
+            if (queryEnhance.getSelectSql() != null) {
+                selectSql.append(queryEnhance.getSelectSql());
+            }
+            if (queryEnhance.getJoinSql() != null) {
+                fromSql.append(queryEnhance.getJoinSql());
+            }
+            if (queryEnhance.getWhereSql() != null) {
+                whereSql.append(queryEnhance.getWhereSql());
+                paras.addAll(queryEnhance.getWhereParam());
+            }
+            if (queryEnhance.getOrderSql() != null && orderSql != null) {
+                orderSql.append(queryEnhance.getOrderSql());
+            }
+            if (queryEnhance.getObjectAssembler() != null) {
+                mapper.setObjectAssembler(queryEnhance.getObjectAssembler());
+            }
+        }
+
+    }
 
 
     /**

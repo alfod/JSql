@@ -12,7 +12,7 @@ import java.util.Date;
  */
 public class SqlUtils {
 
-    public static String GetPlaceHolders(Integer size) {
+    public static String getPlaceHolders(Integer size) {
         if (size == null || size == 0) {
             return "";
         }
