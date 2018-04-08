@@ -741,7 +741,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
 
         if (queryEnhance != null) {
             if (queryEnhance.getSelectSql() != null) {
-                selectSql.append(queryEnhance.getSelectSql());
+                selectSql.append(", ").append(queryEnhance.getSelectSql());
             }
             if (queryEnhance.getJoinSql() != null) {
                 fromSql.append(queryEnhance.getJoinSql());
