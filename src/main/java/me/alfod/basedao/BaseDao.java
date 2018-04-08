@@ -748,7 +748,10 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
             }
             if (queryEnhance.getWhereSql() != null) {
                 whereSql.append(queryEnhance.getWhereSql());
-                paras.addAll(queryEnhance.getWhereParam());
+                if (queryEnhance.getWhereParam() != null
+                        && queryEnhance.getWhereParam().size() > 0) {
+                    paras.addAll(queryEnhance.getWhereParam());
+                }
             }
             if (queryEnhance.getOrderSql() != null && orderSql != null) {
                 orderSql.append(queryEnhance.getOrderSql());
