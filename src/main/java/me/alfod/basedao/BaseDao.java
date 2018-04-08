@@ -19,6 +19,8 @@ import java.sql.*;
 import java.util.*;
 import java.util.Date;
 
+import static me.alfod.basedao.SqlUtils.getCurrentTime;
+
 /**
  * /@author Yang Dong
  * /@createTime 2017/6/9  11:49
@@ -849,9 +851,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         return resultData;
     }
 
-    protected Timestamp getCurrentTime() {
-        return new Timestamp(new Date().getTime());
-    }
+
 
 
     /**
@@ -865,7 +865,8 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
             return "";
         }
         String sortSql = "";
-        if (pageInfo.getSortOrder() != null) {
+        if (pageInfo.getSortOrder() != null
+                && SortTypeEnum.getSqlBySortId(pageInfo.getSortOrder()) != null) {
             sortSql += SortTypeEnum.getSqlBySortId(pageInfo.getSortOrder());
         }
         if (pageInfo.getOrderBy() != null && pageInfo.getOrderBy().length() > 4) {
@@ -933,6 +934,9 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         }
     }
 
+    private void handleEnchance(StringBuilder sql, List<Object> para, BaseDaoRowMapper rowMapper, ObjectAssembler<BO> assembler) {
+
+    }
 
     /**
      * 处理ORM

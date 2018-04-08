@@ -1,5 +1,8 @@
 package me.alfod.basedao;
 
+import java.sql.Timestamp;
+import java.util.Date;
+
 /**
  * @author Yang Dong
  * @createTime 2018/3/29  19:10
@@ -21,5 +24,9 @@ public class SqlUtils {
             stringBuilder.append(comma).append(questionMark);
         }
         return stringBuilder.toString();
+    }
+
+    public static  Timestamp getCurrentTime() {
+        return new Timestamp(System.currentTimeMillis());
     }
 }
