@@ -14,14 +14,11 @@ import javax.persistence.Table;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.ParameterizedType;
-import java.math.BigDecimal;
 import java.sql.*;
 import java.util.*;
 import java.util.Date;
 
-import static me.alfod.basedao.SqlUtils.camelToUnderLine;
-import static me.alfod.basedao.SqlUtils.getCurrentTime;
-import static me.alfod.basedao.SqlUtils.getFieldColumnName;
+import static me.alfod.basedao.SqlUtils.*;
 
 /**
  * /@author Yang Dong
@@ -290,7 +287,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
             }
         }, keyHolder);
         int id = keyHolder.getKey().intValue();
-        setValue(po, "id", id);
+        setValue(po, ID, id);
         return id;
 //        return jdbcTemplate.insertAndGetKey();
     }
@@ -373,7 +370,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
      */
     public int updateByColumn(PO po, Collection<String> whereList) {
         //PO po = boToPo(bo);
-        StringBuilder updateSql = new StringBuilder("");
+        StringBuilder updateSql = new StringBuilder();
         //params
         List<Object> para = new ArrayList<>();
         //处理update条件
@@ -582,13 +579,14 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         try {
             for (int i = 0; i < poFields.length; i++) {
                 poFields[i].setAccessible(true);
-                if (!poColumnName[i].equals(ID)
-                        && !poColumnName[i].equals(DELETED)) {
-                    if (timeColumns.contains(poColumnName[i])) {
-                        values.add(getCurrentTime());
-                    } else {
-                        values.add(poFields[i].get(po));
-                    }
+                if (poColumnName[i].equals(ID)
+                        || poColumnName[i].equals(DELETED)) {
+                    continue;
+                }
+                if (timeColumns.contains(poColumnName[i])) {
+                    values.add(getCurrentTime());
+                } else {
+                    values.add(poFields[i].get(po));
                 }
             }
         } catch (IllegalAccessException e) {
