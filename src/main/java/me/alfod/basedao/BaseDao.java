@@ -342,7 +342,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
     public int updateById(PO po) {
         // PO po = boToPo(bo);
         if (po == null
-                || getValue(po, "id") == null) {
+                || getValue(po, ID) == null) {
             return 0;
         }
         StringBuilder updateSql = new StringBuilder("");
