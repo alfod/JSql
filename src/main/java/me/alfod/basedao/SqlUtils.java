@@ -2,8 +2,11 @@ package me.alfod.basedao;
 
 import javax.persistence.Column;
 import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.sql.Timestamp;
 import java.util.Date;
+import java.util.LinkedList;
+import java.util.List;
 
 /**
  * @author Yang Dong
@@ -64,5 +67,34 @@ public class SqlUtils {
         }
         //init columns name of po
         return camelToUnderLine(field.getName());
+    }
+
+    public static  Field[] getFields(Class<?> clazzType) {
+        List<Field> fieldList = new LinkedList<>();
+        Field[] fields;
+        while (true) {
+            fields = clazzType.getDeclaredFields();
+            for (Field field : fields) {
+                //marked static or final fields will not seem as table column
+                if (Modifier.isStatic(field.getModifiers())
+                        || Modifier.isFinal(field.getModifiers())) {
+                    continue ;
+                } else if (field.isAnnotationPresent(Column.class)) {
+                    Column column = field.getAnnotation(Column.class);
+                    if (column.insertable() == false) {
+                        continue;
+                    }
+                }
+                fieldList.add(field);
+
+            }
+            if (clazzType.getSuperclass() != null
+                    && !clazzType.equals(Object.class)) {
+                clazzType = clazzType.getSuperclass();
+            } else {
+                break;
+            }
+        }
+        return fieldList.toArray(new Field[]{});
     }
 }
