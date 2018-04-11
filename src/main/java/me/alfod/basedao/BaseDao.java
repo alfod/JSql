@@ -9,10 +9,8 @@ import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.util.CollectionUtils;
 
-import javax.persistence.Column;
 import javax.persistence.Table;
 import java.lang.reflect.Field;
-import java.lang.reflect.Modifier;
 import java.lang.reflect.ParameterizedType;
 import java.sql.*;
 import java.util.*;
@@ -616,6 +614,52 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         List<Object[]> paramsList = new ArrayList<>();
         List<String> whereVariable = new ArrayList<>(1);
         whereVariable.add("id");
+
+        StringBuilder updateSqlBuilder = new StringBuilder("update " + TABLE_NAME + "  set ");
+        int fieldIndex = 0;
+        int poIndex = 0;
+        Object value;
+        List<List<Object>> paraList = new ArrayList<>(poList.size());
+        List<Object> para = null;
+        Boolean isNull;
+        try {
+            for (int i = 0, poFieldsLength = poFields.length; i < poFieldsLength; i++) {
+                Field poField = poFields[i];
+                poField.setAccessible(true);
+                poIndex = 0;
+                isNull = null;
+                for (T t : poList) {
+                    para = paraList.get(poIndex++);
+                    if (para == null) {
+                        para = new LinkedList<>();
+                        paraList.add(para);
+                    }
+                    value = poField.get(t);
+                    if (isNull == null) {
+                        isNull = (value == null);
+                    } else {
+                        if (!isNull.equals(value == null)) {
+                            throw new RuntimeException("字段: " + poField.getName() + " 部分有值部分为null");
+                        }
+                    }
+                    if (isNull == false) {
+                        para.add(value);
+                    }
+                }
+                if (isNull == false) {
+                    if (i != 0) {
+                        updateSqlBuilder.append(", ");
+                    }
+                    updateSqlBuilder.append(poColumnName[i] + " = ? ");
+                }
+            }
+
+            for (List<Object> objects : paraList) {
+                paramsList.add(objects.toArray());
+            }
+        } catch (IllegalAccessException e) {
+
+        }
         for (PO po : poList) {
             initNotNull(po);
             paramsList.add(getUpdateValues(po, whereVariable));
@@ -707,10 +751,15 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         handleAssembler(selectSql, fromSql, whereSql, orderSql, paras, mapper, queryEnhance);
 
         String querySql = selectSql.append(fromSql).append(whereSql).append(orderSql).toString();
-
-        List<BO> boList = jdbcTemplate.query(querySql, paras.toArray(), mapper);
         //查询总记录数
         int rows = countByCondition(co);
+
+        if (rows == 0) {
+            return new Page<>();
+        }
+
+        List<BO> boList = jdbcTemplate.query(querySql, paras.toArray(), mapper);
+
         //封装返回值
         Page<BO> resultData = new Page<>();
 
@@ -747,7 +796,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
                 fromSql.append(queryEnhance.getJoinSql());
             }
             if (queryEnhance.getWhereSql() != null) {
-                whereSql.append(" and ").append(queryEnhance.getWhereSql());
+                whereSql.append(queryEnhance.getWhereSql());
                 if (queryEnhance.getWhereParam() != null
                         && queryEnhance.getWhereParam().size() > 0) {
                     paras.addAll(queryEnhance.getWhereParam());
