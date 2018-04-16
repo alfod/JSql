@@ -610,61 +610,82 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         if (CollectionUtils.isEmpty(poList)) {
             return 0;
         }
-        String updateDirectorySql = UPDATE_SQL + " WHERE id = ?;";
         List<Object[]> paramsList = new ArrayList<>();
         List<String> whereVariable = new ArrayList<>(1);
         whereVariable.add("id");
 
-        StringBuilder updateSqlBuilder = new StringBuilder("update " + TABLE_NAME + "  set ");
+        StringBuilder updateSqlBuilder = new StringBuilder(300);
+        updateSqlBuilder.append("update " + TABLE_NAME + "  set ");
         int fieldIndex = 0;
         int poIndex = 0;
+        int paraIndex = 0;
+        boolean isBeforeId = true;
+        boolean isFirstValue = true;
         Object value;
         List<List<Object>> paraList = new ArrayList<>(poList.size());
         List<Object> para = null;
-        Boolean isNull;
+        Boolean isAllNull;
+        String columnName;
+        Field poField;
         try {
             for (int i = 0, poFieldsLength = poFields.length; i < poFieldsLength; i++) {
-                Field poField = poFields[i];
+                poField= poFields[i];
+                columnName = poColumnName[i];
+
                 poField.setAccessible(true);
                 poIndex = 0;
-                isNull = null;
+                isAllNull = null;
                 for (T t : poList) {
-                    para = paraList.get(poIndex++);
-                    if (para == null) {
+                    if (poIndex < paraList.size()) {
+                        para = paraList.get(poIndex);
+                    } else {
                         para = new LinkedList<>();
                         paraList.add(para);
                     }
+                    poIndex++;
                     value = poField.get(t);
-                    if (isNull == null) {
-                        isNull = (value == null);
-                    } else {
-                        if (!isNull.equals(value == null)) {
-                            throw new RuntimeException("字段: " + poField.getName() + " 部分有值部分为null");
+                    if (columnName.equals(ID)) {
+                        if (value == null) {
+                            throw new RuntimeException(" id 不能为null");
+                        }
+                        para.add(value);
+                        isBeforeId = false;
+                        continue;
+                    }
+                    if (isAllNull == null) {
+                        isAllNull = (value == null);
+                    }
+                    if ((!isAllNull && value == null) || (isAllNull && value != null)) {
+                        throw new RuntimeException("字段: " + columnName + " 部分有值部分为null");
+                    }
+                    if (!isAllNull && value != null) {
+                        if (isBeforeId) {
+                            para.add(value);
+                        } else {
+                            para.add(para.size() - 1, value);
                         }
                     }
-                    if (isNull == false) {
-                        para.add(value);
-                    }
                 }
-                if (isNull == false) {
-                    if (i != 0) {
-                        updateSqlBuilder.append(", ");
-                    }
-                    updateSqlBuilder.append(poColumnName[i] + " = ? ");
-                }
-            }
 
+                if (isAllNull != null && !isAllNull) {
+                    if (isFirstValue) {
+                        isFirstValue = false;
+                    } else {
+                        updateSqlBuilder.append(" , ");
+                    }
+                    updateSqlBuilder.append(columnName + " = ? ");
+                }
+
+            }
+            updateSqlBuilder.append(" where id =? ");
             for (List<Object> objects : paraList) {
                 paramsList.add(objects.toArray());
             }
         } catch (IllegalAccessException e) {
-
+            logger.error(e.getMessage());
+            e.printStackTrace();
         }
-        for (PO po : poList) {
-            initNotNull(po);
-            paramsList.add(getUpdateValues(po, whereVariable));
-        }
-        return jdbcTemplate.batchUpdate(updateDirectorySql, paramsList).length;
+        return jdbcTemplate.batchUpdate(updateSqlBuilder.toString(), paramsList).length;
     }
 
 
@@ -744,22 +765,38 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         StringBuilder selectSql = new StringBuilder("select ").append(BASE_COLUMN);
         StringBuilder fromSql = new StringBuilder(FROM_SQL);
         StringBuilder whereSql = new StringBuilder(getWhereSql(co));
-        StringBuilder orderSql = new StringBuilder(getSqlByPageInfo(pageParam));
+        StringBuilder orderSql = new StringBuilder(" ORDER BY ");
+
         List<Object> paras = getParaList(co);
         BaseDaoRowMapper mapper = new BaseDaoRowMapper();
-
-        handleAssembler(selectSql, fromSql, whereSql, orderSql, paras, mapper, queryEnhance);
-
+        if (queryEnhance != null) {
+            if (queryEnhance.getSelectSql() != null) {
+                selectSql.append(", ").append(queryEnhance.getSelectSql());
+            }
+            if (queryEnhance.getJoinSql() != null) {
+                fromSql.append(queryEnhance.getJoinSql());
+            }
+            if (queryEnhance.getWhereSql() != null) {
+                whereSql.append(queryEnhance.getWhereSql());
+                if (queryEnhance.getWhereParam() != null
+                        && queryEnhance.getWhereParam().size() > 0) {
+                    paras.addAll(queryEnhance.getWhereParam());
+                }
+            }
+            if (queryEnhance.getOrderSql() != null) {
+                orderSql.append(queryEnhance.getOrderSql());
+            }
+            if (queryEnhance.getObjectAssembler() != null) {
+                mapper.setObjectAssembler(queryEnhance.getObjectAssembler());
+            }
+        }
+        getSqlByPageInfo(pageParam, orderSql);
         String querySql = selectSql.append(fromSql).append(whereSql).append(orderSql).toString();
+
+        logger.info(querySql);
+        List<BO> boList = jdbcTemplate.query(querySql, paras.toArray(), mapper);
         //查询总记录数
         int rows = countByCondition(co);
-
-        if (rows == 0) {
-            return new Page<>();
-        }
-
-        List<BO> boList = jdbcTemplate.query(querySql, paras.toArray(), mapper);
-
         //封装返回值
         Page<BO> resultData = new Page<>();
 
@@ -779,7 +816,6 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         resultData.setItemTotal(rows); //总记录数
         return resultData;
     }
-
     private void handleAssembler(StringBuilder selectSql,
                                  StringBuilder fromSql,
                                  StringBuilder whereSql,
@@ -819,14 +855,14 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
      * @param pageInfo pageInfo
      * @return sample " ORDER BY ${poAliasName}.id"
      */
-    protected String getSqlByPageInfo(com.gaosi.api.common.basedao.PageParam pageInfo) {
+    protected String getSqlByPageInfo(com.gaosi.api.common.basedao.PageParam pageInfo, StringBuilder orderBy) {
         if (pageInfo == null) {
             return "";
         }
         String sortSql = "";
         if (pageInfo.getSortOrder() != null
                 && SortTypeEnum.getSqlBySortId(pageInfo.getSortOrder()) != null) {
-            sortSql += SortTypeEnum.getSqlBySortId(pageInfo.getSortOrder());
+            sortSql += (TABLE_POINT+SortTypeEnum.getSqlBySortId(pageInfo.getSortOrder()));
         }
         if (pageInfo.getOrderBy() != null && pageInfo.getOrderBy().length() > 4) {
             if (sortSql != null && sortSql.length() > 4) {
@@ -848,12 +884,15 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
                 || pageInfo.getPageNum() < 1) {
             pageInfo.setPageNum(defaultPageNumber);
         }
+        if (!sortSql.isEmpty()) {
+            if (orderBy.length() > 13) {
+                orderBy.append(" , ");
+            }
+            orderBy.append(sortSql);
+        }
+        orderBy.append(" limit ").append((pageInfo.getPageNum() - 1) * pageInfo.getPageSize()).append(",").append(pageInfo.getPageSize());
 
-        StringBuilder sql = new StringBuilder(" ");
-        sql.append(" ORDER BY ").append(sortSql);
-        sql.append(" limit ").append((pageInfo.getPageNum() - 1) * pageInfo.getPageSize()).append(",").append(pageInfo.getPageSize());
-
-        return sql.toString();
+        return orderBy.toString();
     }
 
     /**
