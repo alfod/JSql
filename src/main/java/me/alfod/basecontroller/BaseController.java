@@ -13,7 +13,6 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.util.Assert;
 import org.springframework.util.CollectionUtils;
 
@@ -33,7 +32,7 @@ public abstract class BaseController<BO> {
     private static Logger logger = LoggerFactory.getLogger(BaseController.class);
     @Resource
     private ManageService manageService;
-    @Autowired
+    @Resource
     private UserService userServiceNew;
 
 
@@ -199,6 +198,16 @@ public abstract class BaseController<BO> {
             return ResultBody.failed(apiResponse.getMessage(),apiResponse.getBody());
         }
         return ResultBody.successed(apiResponse.getBody());
+    }
+
+    protected com.aixuexi.thor.response.ResultBody checkThenReturn(com.aixuexi.thor.response.ApiResponse apiResponse) {
+        if (apiResponse == null) {
+            return com.aixuexi.thor.response.ResultBody.failed("操作执行失败");
+        }
+        if (apiResponse.isNotSuccess()) {
+            return com.aixuexi.thor.response.ResultBody.failed(apiResponse.getMessage(),apiResponse.getBody());
+        }
+        return com.aixuexi.thor.response.ResultBody.successed(apiResponse.getBody());
     }
 
     /**

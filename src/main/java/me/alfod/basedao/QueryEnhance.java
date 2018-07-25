@@ -1,9 +1,10 @@
 package me.alfod.basedao;
 
-import me.alfod.basedao.ObjectAssembler;
-
 import java.io.Serializable;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * @author Yang Dong
@@ -37,12 +38,30 @@ public class QueryEnhance<BO> implements Serializable {
      * 拼接到where 后面语句的参数
      * 示例： { "2015-10-01", "2017-10-01" }
      */
-    private List<Object> whereParam;
+    private List whereParam;
+
+    /**
+     * 模糊查询的列名，逗号分隔
+     * "aa,dd,fff"
+     */
+    private Set<String> fuzzyColumns;
+
+    /**
+     * 拼接到order by 后面
+     * 示例： "i.id asc, i.name desc"
+     */
+    private String orderSql;
+
+    /**
+     * BO 对象组装器， 在自动封装本表字段后执行，以便进行额外的操作
+     */
+    private ObjectAssembler<BO> objectAssembler;
+
 
     public QueryEnhance() {
     }
 
-    public QueryEnhance(String selectSql, String joinSql, String whereSql, List<Object> whereParam, ObjectAssembler<BO> objectAssembler) {
+    public QueryEnhance(String selectSql, String joinSql, String whereSql, List whereParam, ObjectAssembler<BO> objectAssembler) {
         this.selectSql = selectSql;
         this.joinSql = joinSql;
         this.whereSql = whereSql;
@@ -50,7 +69,7 @@ public class QueryEnhance<BO> implements Serializable {
         this.objectAssembler = objectAssembler;
     }
 
-    public QueryEnhance(String selectSql, String joinSql, String whereSql, List<Object> whereParam, String orderSql, ObjectAssembler<BO> objectAssembler) {
+    public QueryEnhance(String selectSql, String joinSql, String whereSql, List whereParam, String orderSql, ObjectAssembler<BO> objectAssembler) {
 
         this.selectSql = selectSql;
         this.joinSql = joinSql;
@@ -65,13 +84,13 @@ public class QueryEnhance<BO> implements Serializable {
         this.orderSql = orderSql;
     }
 
-    public QueryEnhance(String whereSql, List<Object> whereParam) {
+    public QueryEnhance(String whereSql, List whereParam) {
 
         this.whereSql = whereSql;
         this.whereParam = whereParam;
     }
 
-    public QueryEnhance(String selectSql, String joinSql, String whereSql, List<Object> whereParam) {
+    public QueryEnhance(String selectSql, String joinSql, String whereSql, List whereParam) {
 
         this.selectSql = selectSql;
         this.joinSql = joinSql;
@@ -85,23 +104,29 @@ public class QueryEnhance<BO> implements Serializable {
         this.joinSql = joinSql;
     }
 
-    /**
-     * 拼接到order by 后面
-     * 示例： "i.id asc, i.name desc"
-     */
-    private String orderSql;
 
+    public Set<String> getFuzzyColumns() {
+        return fuzzyColumns;
+    }
 
-    /**
-     * BO 对象组装器， 在自动封装本表字段后执行，以便进行额外的操作
-     */
-    private ObjectAssembler<BO> objectAssembler;
+    public QueryEnhance setFuzzyColumns(Set<String> fuzzyColumns) {
+        this.fuzzyColumns = fuzzyColumns;
+        return this;
+    }
 
-    public ObjectAssembler getObjectAssembler() {
+    public QueryEnhance buildFuzzyColumns(String... fuzzyColumns) {
+        if (this.fuzzyColumns == null) {
+            this.fuzzyColumns = new HashSet<>();
+        }
+        this.fuzzyColumns.addAll(Arrays.asList(fuzzyColumns));
+        return this;
+    }
+
+    public ObjectAssembler<BO> getObjectAssembler() {
         return objectAssembler;
     }
 
-    public void setObjectAssembler(ObjectAssembler objectAssembler) {
+    public void setObjectAssembler(ObjectAssembler<BO> objectAssembler) {
         this.objectAssembler = objectAssembler;
     }
 
@@ -129,11 +154,11 @@ public class QueryEnhance<BO> implements Serializable {
         this.whereSql = whereSql;
     }
 
-    public List<Object> getWhereParam() {
+    public List getWhereParam() {
         return whereParam;
     }
 
-    public void setWhereParam(List<Object> whereParam) {
+    public void setWhereParam(List whereParam) {
         this.whereParam = whereParam;
     }
 
@@ -141,7 +166,8 @@ public class QueryEnhance<BO> implements Serializable {
         return orderSql;
     }
 
-    public void setOrderSql(String orderSql) {
+    public QueryEnhance<BO> setOrderSql(String orderSql) {
         this.orderSql = orderSql;
+        return this;
     }
 }

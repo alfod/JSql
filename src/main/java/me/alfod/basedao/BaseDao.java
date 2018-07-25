@@ -1,22 +1,25 @@
 package me.alfod.basedao;
 
+import com.aixuexi.thor.util.Page;
+import com.google.common.collect.Lists;
+import org.apache.commons.collections4.MapUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.PreparedStatementCreator;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.util.CollectionUtils;
 
+import javax.persistence.Column;
 import javax.persistence.Table;
 import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.lang.reflect.ParameterizedType;
+import java.math.BigDecimal;
 import java.sql.*;
 import java.util.*;
 import java.util.Date;
-
-import static me.alfod.basedao.SqlUtils.*;
 
 /**
  * /@author Yang Dong
@@ -37,37 +40,34 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
     protected final String SELECT_ALL_FROM_SQL;
     protected final String INSERT_SQL;
 
-    private final Class<PO> poClassType;
-    private final Class<BO> boClassType;
-    private final Field[] boFields;
-    private final Field[] poFields;
-    private final String[] poColumnName;
-    private final String[] boColumnName;
 
+    protected final Field[] poFields;
+
+    protected final Class<PO> poClassType;
+    protected final Class<BO> boClassType;
+    protected final Field[] boFields;
+    protected final String[] poColumnName;
+    protected final String[] boColumnName;
+    protected final Set<String> noUpdateColumns;
+    protected final Set<String> timeColumns;
+    protected final String DELETED = "deleted";
+    protected final String ID = "id";
+    protected final String UPDATE_TIME = "update_time";
+    protected final String CREATE_TIME = "create_time";
+    protected final String OPERATOR_ID = "operator_id";
     private final Map<String, Field> poFieldNameMap;
     private final Map<String, Field> boFieldNameMap;
-
-
+    private final Map<Field, String> boNameFieldMap;
     private final Integer defaultPageSize = 10;
     private final Integer defaultPageNumber = 1;
     private final Integer defaultSortOrder = 2;
-    private final Set<String> noUpdateColumns;
-    private final Set<String> timeColumns;
-
-    private final String DELETED = "deleted";
-    private final String ID = "id";
-    private final String UPDATE_TIME = "update_time";
-    private final String CREATE_TIME = "create_time";
-    private final String OPERATOR_ID = "operator_id";
-
+    @Autowired
+    protected CommonMysqlClient commonMysqlClient;
     private String deleteFilterSqlTableName = " 1=1 ";
     private boolean updateTimeExist = false;
     private boolean createTimeExist = false;
     private boolean deletedExist = false;
     private boolean operatorIdExist = false;
-
-    @Autowired
-    protected JdbcTemplate jdbcTemplate;
 
     @SuppressWarnings("unchecked")
     public BaseDao() {
@@ -109,6 +109,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         //to reduce probability of hash colliding,
         this.poFieldNameMap = new HashMap<>(3 * poFields.length);
         this.boFieldNameMap = new HashMap<>(3 * boFields.length);
+        this.boNameFieldMap = new HashMap<>(3 * boFields.length);
 
 
         noUpdateColumns = new HashSet<>(9);
@@ -133,6 +134,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
             poColumnName[i] = getFieldColumnName(field);
             //init index of columns name
             poFieldNameMap.put(poColumnName[i], field);
+            boNameFieldMap.put(field, poColumnName[i]);
             if (DELETED.equals(poColumnName[i])) {
                 deleteFilterSqlTableName = TABLE_POINT + "deleted = 0 ";
                 deletedExist = true;
@@ -153,7 +155,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
             }
 
             //sample  "po.id "
-            allColumns.append(TABLE_POINT).append(poColumnName[i]).append(" ").append(poColumnName[i]);
+            allColumns.append(TABLE_POINT).append(poColumnName[i]).append(" ").append("`").append(poColumnName[i]).append("`");
             //sample "po_id "
             //allColumns.append(poColumnName[i]).append(" ");
 
@@ -195,6 +197,21 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
     }
 
 
+    private String getFieldColumnName(Field field) {
+        field.setAccessible(true);
+        if (field.isAnnotationPresent(Column.class)) {
+            //init columns name of po
+            Column column = field.getAnnotation(Column.class);
+            if (column.name().length() > 0) {
+                return column.name();
+            } else {
+                //init columns name of po
+                return camelToUnderLine(field.getName());
+            }
+        }
+        //init columns name of po
+        return camelToUnderLine(field.getName());
+    }
 
     private Object getValue(PO po, String column) {
         try {
@@ -214,12 +231,100 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
             logger.error(e.getMessage());
         }
     }
-    public int save(final PO po) {
+
+    private Field[] getFields(Class<?> clazzType) {
+        List<Field> fieldList = new LinkedList<>();
+        Field[] fields;
+        while (true) {
+            fields = clazzType.getDeclaredFields();
+            for (Field field : fields) {
+                //marked static or final fields will not seem as table column
+                if (Modifier.isStatic(field.getModifiers())
+                        || Modifier.isFinal(field.getModifiers())) {
+                    continue;
+                } else if (field.isAnnotationPresent(Column.class)) {
+                    Column column = field.getAnnotation(Column.class);
+                    if (column.insertable() == false) {
+                        continue;
+                    }
+                }
+                fieldList.add(field);
+
+            }
+            if (clazzType.getSuperclass() != null
+                    && !clazzType.equals(Object.class)) {
+                clazzType = clazzType.getSuperclass();
+            } else {
+                break;
+            }
+        }
+        return fieldList.toArray(new Field[]{});
+    }
+
+    private String camelToUnderLine(String s) {
+        final String UNDER_LINE = "_";
+        StringBuilder camelCase = new StringBuilder("");
+        for (int i = 0; i < s.length(); i++) {
+            if (Character.isUpperCase(s.charAt(i))) {
+                if (i != 0) {
+                    camelCase.append(UNDER_LINE);
+                }
+                camelCase.append(Character.toLowerCase(s.charAt(i)));
+            } else {
+                camelCase.append(s.charAt(i));
+            }
+        }
+        return camelCase.toString();
+    }
+
+
+    /**
+     * 处理ORM
+     *
+     * @param resultSet resultSet
+     * @param po        bo
+     */
+    private void handleMapping(ResultSet resultSet, PO po) throws SQLException {
+        Field field;
+        try {
+            for (int i = 0; i < poColumnName.length; i++) {
+                field = poFields[i];
+                //close permission validation to enhance performance
+                field.setAccessible(true);
+
+                if (field.getType() == Integer.class) {
+                    field.set(po, resultSet.getInt(poColumnName[i]));
+                }
+                if (field.getType() == String.class) {
+                    field.set(po, resultSet.getString(poColumnName[i]));
+                }
+                if (field.getType() == Date.class) {
+                    field.set(po, resultSet.getTimestamp(poColumnName[i]));
+                }
+                if (field.getType() == Long.class) {
+                    field.set(po, resultSet.getLong(poColumnName[i]));
+                }
+                if (field.getType() == Double.class) {
+                    field.set(po, resultSet.getDouble(poColumnName[i]));
+                }
+                if (field.getType() == BigDecimal.class) {
+                    field.set(po, resultSet.getBigDecimal(poColumnName[i]));
+                }
+
+            }
+        } catch (IllegalAccessException e) {
+            logger.error(e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    public int saveSelective(final PO po) {
         StringBuilder insertSql = new StringBuilder("insert into " + FULL_TABLE_NAME + "( ");
         final List<Object> values = new ArrayList<>(poFields.length);
         Object value;
         Field field;
         String columnName;
+        Date now = new Date();
         for (int i = 0; i < poFields.length; ++i) {
             field = poFields[i];
             field.setAccessible(true);
@@ -227,6 +332,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
             if (ID.equals(columnName)) {
                 continue;
             }
+
             try {
                 value = field.get(po);
             } catch (IllegalAccessException e) {
@@ -234,6 +340,12 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
                 continue;
             }
             if (value == null) {
+                if (CREATE_TIME.equals(columnName)) {
+                    value = now;
+                }
+                if (DELETED.equals(columnName)) {
+                    value = 0;
+                }
                 continue;
             }
             insertSql.append(columnName);
@@ -241,10 +353,10 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
             insertSql.append(",");
         }
         insertSql.deleteCharAt(insertSql.length() - 1);
-        insertSql.append(") values ").append(SqlUtils.getPlaceHolders(values.size()));
+        insertSql.append(") values ").append(SQLUtil.sizeToUnknown(values.size()));
         final String insertSqlStr = insertSql.toString();
         KeyHolder keyHolder = new GeneratedKeyHolder();
-        jdbcTemplate.update(new PreparedStatementCreator() {
+        commonMysqlClient.update(new PreparedStatementCreator() {
             @Override
             public PreparedStatement createPreparedStatement(Connection con) throws SQLException {
                 PreparedStatement ps = con.prepareStatement(insertSqlStr, Statement.RETURN_GENERATED_KEYS);
@@ -255,9 +367,77 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
             }
         }, keyHolder);
         int id = keyHolder.getKey().intValue();
-        setValue(po, ID, id);
+        setValue(po, "id", id);
         return id;
-//        return jdbcTemplate.insertAndGetKey();
+//        return commonMysqlClient.insertAndGetKey();
+    }
+
+    /**
+     * @param po po
+     * @return id
+     * @deprecated 建议使用  saveSelective   方法替代
+     */
+    @Deprecated
+    public int save(final PO po) {
+        // final PO po = boToPo(bo);
+        if (po == null || getValue(po, "id") != null) {
+            return 0;
+        }
+        initNotNull(po);
+        int id = commonMysqlClient.insertAndGetKey(new PreparedStatementCreator() {
+            @Override
+            public PreparedStatement createPreparedStatement(Connection con) throws SQLException {
+                PreparedStatement ps = con.prepareStatement(INSERT_SQL, Statement.RETURN_GENERATED_KEYS);
+                try {
+                    int index = 1;
+                    Object value;
+                    for (int i = 0; i < poFields.length; i++) {
+                        if ((value = poFields[i].get(po)) != null) {
+                            if (poFields[i].getType() == String.class) {
+                                ps.setString(index++, (String) value);
+                            }
+                            if (poFields[i].getType() == Integer.class) {
+                                if (!poColumnName[i].equals("id")
+                                        && !poColumnName[i].equals("deleted")) {
+                                    ps.setInt(index++, (Integer) value);
+                                }
+                            }
+                            if (poFields[i].getType() == Long.class) {
+                                ps.setLong(index++, (Long) value);
+                            }
+                            if (poFields[i].getType() == Double.class) {
+                                ps.setDouble(index++, (Double) value);
+                            }
+                            if (poFields[i].getType() == BigDecimal.class) {
+                                ps.setBigDecimal(index++, (BigDecimal) value);
+                            }
+                            if (poFields[i].getType() == Boolean.class) {
+                                ps.setBoolean(index++, (Boolean) value);
+                            }
+                            if (poFields[i].getType() == Byte.class) {
+                                ps.setByte(index++, (Byte) value);
+                            }
+                            if (poFields[i].getType() == Float.class) {
+                                ps.setFloat(index++, (Float) value);
+                            }
+                            if (poFields[i].getType() == Date.class) {
+                                if (timeColumns.contains(poColumnName[i])) {
+                                    ps.setTimestamp(index++, getCurrentTime());
+                                } else {
+                                    ps.setTimestamp(index++, new Timestamp(((Date) value).getTime()));
+                                }
+                            }
+                        }
+                    }
+                } catch (IllegalAccessException e) {
+                    logger.error(e.getMessage());
+                }
+
+                return ps;
+            }
+        });
+        setValue(po, "id", id);
+        return id;
     }
 
     protected void initNotNull(PO po) {
@@ -310,7 +490,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
     public int updateById(PO po) {
         // PO po = boToPo(bo);
         if (po == null
-                || getValue(po, ID) == null) {
+                || getValue(po, "id") == null) {
             return 0;
         }
         StringBuilder updateSql = new StringBuilder("");
@@ -325,7 +505,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         String sql = "UPDATE " + FULL_TABLE_NAME + " SET " + updateSql + " WHERE id = ? ";
 
         para.add(getValue(po, "id"));
-        return jdbcTemplate.update(sql, para.toArray());
+        return commonMysqlClient.update(sql, para.toArray());
     }
 
 
@@ -338,7 +518,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
      */
     public int updateByColumn(PO po, Collection<String> whereList) {
         //PO po = boToPo(bo);
-        StringBuilder updateSql = new StringBuilder();
+        StringBuilder updateSql = new StringBuilder("");
         //params
         List<Object> para = new ArrayList<>();
         //处理update条件
@@ -349,7 +529,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         StringBuilder whereSql = new StringBuilder(" WHERE 1=1 ");
         handleWhereInfoFromList(po, para, whereSql, whereList);
         String sql = "UPDATE " + FULL_TABLE_NAME + " SET " + updateSql + whereSql.toString();
-        return jdbcTemplate.update(sql, para.toArray());
+        return commonMysqlClient.update(sql, para.toArray());
     }
 
     /**
@@ -370,9 +550,10 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
     }
 
     @SuppressWarnings("unchecked")
-    public List<BO> getListByCondition(PO co) {
-        String  querySql = SELECT_ALL_FROM_SQL + getWhereSql(co);
-        return jdbcTemplate.query(querySql, getPara(co), new BaseDaoRowMapper());
+    public List<BO> getListByCondition(PO po) {
+        List<Object> paras = new ArrayList<>(boColumnName.length);
+        String querySql = SELECT_ALL_FROM_SQL + getWhereSql(po, paras, null);
+        return commonMysqlClient.query(querySql, paras.toArray(), new BaseDaoRowMapper());
     }
 
     /**
@@ -380,7 +561,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
      * @param enableNull true: can null , false: not null
      * @return sample "advert.abc=? and advert.edf=?;"
      */
-    private String getWhereSql(PO co) {
+    private String getWhereSql(PO co, List<Object> paras, Set<String> fuzzyColumns) {
         if (co == null) {
             return "where 1=2";
         }
@@ -389,16 +570,23 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
             whereSql.append(" and " + FULL_TABLE_NAME + ".deleted = 0 ");
         }
         try {
+            String columnName;
+            Object value;
             for (int i = 0; i < poFields.length; i++) {
                 poFields[i].setAccessible(true);
                 //logic will be too complex if two if condition combined
                 //so split it to two if statement
                 //if enableNull is false,only the value of filed is not null can be append in where sql
-                if (poFields[i].get(co) != null) {
+                value = poFields[i].get(co);
+                columnName = poColumnName[i];
+                if (value != null && !columnName.equals(DELETED)) {
                     //excluded 'deleted' filed ,for the default query option is 'deleted=0'
-                    if (!poColumnName[i].equals("deleted")) {
-                        whereSql.append("  and ").append(TABLE_POINT).append(poColumnName[i]).append(" =?  ");
+                    if (fuzzyColumns != null && fuzzyColumns.contains(columnName)) {
+                        whereSql.append("  and ").append(TABLE_POINT).append(poColumnName[i]).append(" like ?  ");
+                    } else {
+                        whereSql.append("  and ").append(TABLE_POINT).append(poColumnName[i]).append(" = ?  ");
                     }
+                    paras.add(value);
                 }
             }
 
@@ -409,44 +597,11 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
     }
 
 
-    /**
-     * @param co         co
-     * @param enableNull true:all para, false:not null
-     * @return [value1, value2]
-     */
-    private List<Object> getParaList(PO co) {
-        if (co == null) {
-            return new ArrayList<>();
-        }
-        List<Object> objectList = new ArrayList<>(poFields.length);
-        try {
-            for (Field coField : poFields) {
-                coField.setAccessible(true);
-                if (coField.get(co) != null) {
-                    objectList.add(coField.get(co));
-                }
-            }
-        } catch (IllegalAccessException e) {
-            logger.error(e.getMessage());
-        }
-        return objectList;
-    }
-
-    private Object[] getPara(PO co) {
-        return getParaList(co).toArray();
-    }
-
-
     public int countByCondition(PO po) {
-        //sql
-        StringBuilder sql = new StringBuilder("SELECT COUNT(DISTINCT id) AS count " + FROM_SQL).append(getWhereSql(po));
-        //params
-        Object[] para = getPara(po);
-        sql.append(";");
-        //step 3:查询结果集
-        Map<String, Object> queryForMap = jdbcTemplate.queryForMap(sql.toString(), para);
-
-        return (int)(queryForMap.get("count"));
+        List<Object> paras = new ArrayList<>(boColumnName.length);
+        StringBuilder sql = new StringBuilder("SELECT COUNT(*) AS count " + FROM_SQL).append(getWhereSql(po, paras, null));
+        Map<String, Object> queryForMap = commonMysqlClient.queryForMap(sql.toString(), paras.toArray());
+        return MapUtils.getIntValue(queryForMap, "count");
     }
 
 
@@ -454,7 +609,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         String deleteSql = "UPDATE " + FULL_TABLE_NAME + " SET deleted = 1 ";
         List paras = new LinkedList();
         if (operatorIdExist && operatorId != null) {
-            deleteSql+=", operator_id = ? ";
+            deleteSql += ", operator_id = ? ";
             paras.add(operatorId);
         }
         if (updateTimeExist) {
@@ -463,7 +618,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         }
         deleteSql += " WHERE id = ?  ";
         paras.add(id);
-        return jdbcTemplate.update(deleteSql, paras.toArray());
+        return commonMysqlClient.update(deleteSql, paras.toArray());
     }
 
 
@@ -471,7 +626,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
     public BO getById(Integer id) {
         String sql = SELECT_ALL_FROM_SQL + " WHERE " + deleteFilterSqlTableName +
                 " and " + TABLE_POINT + "id = ?;";
-        List<BO> sqlResult = jdbcTemplate.query(sql, new Object[]{id}, new BaseDaoRowMapper());
+        List<BO> sqlResult = commonMysqlClient.query(sql, new Object[]{id}, new BaseDaoRowMapper());
         return sqlResult.size() == 0 ? null : sqlResult.get(0);
     }
 
@@ -490,17 +645,17 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
     @SuppressWarnings("unchecked")
     public List<BO> getListByKeyValue(Object... values) {
         if (values.length == 0 || values.length % 2 != 0) {
-            return new ArrayList();
+            return Lists.newArrayList();
         }
         StringBuilder whereSql = new StringBuilder(" 1= 1 ");
         Object value;
-        List<Object> paras =new LinkedList<>();
+        List<Object> paras = Lists.newLinkedList();
         for (int i = 0; i < values.length / 2; ++i) {
             whereSql.append(" and ").append(TABLE_POINT).append("`").append(values[2 * i]).append("`");
             value = values[2 * i + 1];
             if (value instanceof Collection) {
                 paras.addAll((Collection) value);
-                whereSql.append(" in ").append(SqlUtils.getPlaceHolders(((Collection) value).size()));
+                whereSql.append(" in ").append(SQLUtil.sizeToUnknown(((Collection) value).size()));
             } else {
                 paras.add(value);
                 whereSql.append("=? ");
@@ -508,17 +663,20 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         }
         String sql = SELECT_ALL_FROM_SQL + " WHERE " + deleteFilterSqlTableName +
                 " and " + whereSql.toString();
-        List<BO> sqlResult = jdbcTemplate.query(sql, paras.toArray(), new BaseDaoRowMapper());
+        List<BO> sqlResult = commonMysqlClient.query(sql, paras.toArray(), new BaseDaoRowMapper());
         return sqlResult;
     }
 
 
     @SuppressWarnings("unchecked")
     public List<BO> getListByIds(Collection<Integer> ids) {
-        final String para = SqlUtils.getPlaceHolders(ids.size());
+        if (ids == null || ids.isEmpty()) {
+            return new ArrayList<>();
+        }
+        final String para = SQLUtil.sizeToUnknown(ids.size());
         final String querySql = "SELECT " + BASE_COLUMN + FROM_SQL + " where " + deleteFilterSqlTableName +
                 " and " + TABLE_POINT + "id in " + para + ";";
-        return jdbcTemplate.query(querySql, ids.toArray(), new BaseDaoRowMapper());
+        return commonMysqlClient.query(querySql, ids.toArray(), new BaseDaoRowMapper());
     }
 
     public <T extends PO> int[] batchSave(Collection<T> boList) {
@@ -538,7 +696,111 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
             initNotNull(po);
             paramsList.add(getInsertParasValues(po));
         }
-        return jdbcTemplate.batchUpdate(INSERT_SQL, paramsList);
+        return commonMysqlClient.batchInsert(INSERT_SQL, paramsList);
+    }
+
+    public <T extends PO> int[] batchSaveSelective(Collection<T> poList) {
+
+        if (CollectionUtils.isEmpty(poList)) {
+            return new int[0];
+        }
+        List<Object[]> paramsList = new ArrayList<>();
+
+        StringBuilder insertSqlBuilder = new StringBuilder(300);
+        insertSqlBuilder.append(" insert into " + TABLE_NAME + "  ( ");
+        StringBuilder valuesSqlBuilder = new StringBuilder(100);
+        valuesSqlBuilder.append(" VALUES ( ");
+        int fieldIndex = 0;
+        int poIndex = 0;
+        int paraIndex = 0;
+        boolean isBeforeId = true;
+        boolean isFirstValue = true;
+        Object value;
+        List<List<Object>> paraList = new ArrayList<>(poList.size());
+        List<Object> para = null;
+        Boolean isAllNull;
+        String columnName;
+        Field poField;
+        try {
+            for (int i = 0, poFieldsLength = poFields.length; i < poFieldsLength; i++) {
+                poField = poFields[i];
+                columnName = poColumnName[i];
+
+                if (ID.equals(columnName)) {
+                    continue;
+                }
+                poField.setAccessible(true);
+                poIndex = 0;
+                isAllNull = null;
+                for (T t : poList) {
+                    if (t == null) {
+                        continue;
+                    }
+                    if (poIndex < paraList.size()) {
+                        para = paraList.get(poIndex);
+                    } else {
+                        para = new LinkedList<>();
+                        paraList.add(para);
+                    }
+                    poIndex++;
+                    value = poField.get(t);
+                    if (value == null) {
+                        if (CREATE_TIME.equals(columnName)) {
+                            value = new Date();
+                        }
+                        if (DELETED.equals(columnName)) {
+                            value = 0;
+                        }
+                    }
+                    if (isAllNull == null) {
+                        isAllNull = (value == null);
+                    }
+                    if ((!isAllNull && value == null) || (isAllNull && value != null)) {
+                        throw new RuntimeException("字段: " + columnName + " 部分有值部分为null");
+                    }
+                    if (!isAllNull && value != null) {
+                        para.add(value);
+                    }
+                }
+
+                if (isAllNull != null && !isAllNull) {
+                    if (isFirstValue) {
+                        isFirstValue = false;
+                    } else {
+                        insertSqlBuilder.append(" , ");
+                        valuesSqlBuilder.append(" , ");
+                    }
+                    insertSqlBuilder.append("`").append(columnName).append("`");
+                    valuesSqlBuilder.append(" ? ");
+                }
+
+            }
+            insertSqlBuilder.append(" ) ");
+            valuesSqlBuilder.append(") ; ");
+
+            insertSqlBuilder.append(valuesSqlBuilder);
+
+            for (List<Object> objects : paraList) {
+                paramsList.add(objects.toArray());
+            }
+        } catch (IllegalAccessException e) {
+            logger.error(e.getMessage());
+            e.printStackTrace();
+        }
+
+        String insertSql = insertSqlBuilder.toString();
+        logger.info(insertSql);
+        int[] ids = commonMysqlClient.batchInsert(insertSql, paramsList);
+        T t;
+        int index = 0;
+        for (T t1 : poList) {
+            if (t1 == null) {
+                continue;
+            }
+            setValue(t1, "id", ids[index++]);
+        }
+        return ids;
+
     }
 
     private Object[] getInsertParasValues(PO po) {
@@ -547,14 +809,13 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         try {
             for (int i = 0; i < poFields.length; i++) {
                 poFields[i].setAccessible(true);
-                if (poColumnName[i].equals(ID)
-                        || poColumnName[i].equals(DELETED)) {
-                    continue;
-                }
-                if (timeColumns.contains(poColumnName[i])) {
-                    values.add(getCurrentTime());
-                } else {
-                    values.add(poFields[i].get(po));
+                if (!poColumnName[i].equals(ID)
+                        && !poColumnName[i].equals(DELETED)) {
+                    if (timeColumns.contains(poColumnName[i])) {
+                        values.add(getCurrentTime());
+                    } else {
+                        values.add(poFields[i].get(po));
+                    }
                 }
             }
         } catch (IllegalAccessException e) {
@@ -606,14 +867,30 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
 
     }
 
+    @Deprecated
     public <T extends PO> int batchUpdateById(Collection<T> poList) {
         if (CollectionUtils.isEmpty(poList)) {
             return 0;
         }
+        String updateDirectorySql = UPDATE_SQL + " WHERE id = ?;";
         List<Object[]> paramsList = new ArrayList<>();
         List<String> whereVariable = new ArrayList<>(1);
         whereVariable.add("id");
+        for (PO po : poList) {
+            initNotNull(po);
+            paramsList.add(getUpdateValues(po, whereVariable));
+        }
+        return commonMysqlClient.batchUpdate(updateDirectorySql, paramsList).length;
+    }
 
+    public <T extends PO> int batchUpdateByIdSelective(Collection<T> poList) {
+        if (CollectionUtils.isEmpty(poList)) {
+            return 0;
+        }
+        List<Object[]> paramsList
+                = new ArrayList<>();
+        List<String> whereVariable = new ArrayList<>(1);
+        whereVariable.add("id");
         StringBuilder updateSqlBuilder = new StringBuilder(300);
         updateSqlBuilder.append("update " + TABLE_NAME + "  set ");
         int fieldIndex = 0;
@@ -629,9 +906,8 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         Field poField;
         try {
             for (int i = 0, poFieldsLength = poFields.length; i < poFieldsLength; i++) {
-                poField= poFields[i];
+                poField = poFields[i];
                 columnName = poColumnName[i];
-
                 poField.setAccessible(true);
                 poIndex = 0;
                 isAllNull = null;
@@ -685,17 +961,16 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
             logger.error(e.getMessage());
             e.printStackTrace();
         }
-        return jdbcTemplate.batchUpdate(updateSqlBuilder.toString(), paramsList).length;
+        return commonMysqlClient.batchUpdate(updateSqlBuilder.toString(), paramsList).length;
     }
 
 
     /**
-     *
      * @param boList        boList
      * @param whereVariable whereVariable
      * @return n
      */
-    public int batchUpdateByColumns(Collection<PO> poList, List<String> whereVariable) {
+    public int batchUpdateByColumns(List<? extends PO> poList, List<String> whereVariable) {
         //List<PO> poList = listBoToPo(boList);
         List<Object[]> paramsList = new ArrayList<>();
         String updateSql = getUpdateSql(whereVariable) + getWhereSql(whereVariable);
@@ -703,7 +978,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
             initNotNull(po);
             paramsList.add(getUpdateValues(po, whereVariable));
         }
-        return jdbcTemplate.batchUpdate(updateSql, paramsList).length;
+        return commonMysqlClient.batchUpdate(updateSql, paramsList).length;
 
     }
 
@@ -721,7 +996,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
     protected String getWhereSql(List<String> columns) {
         StringBuilder whereSql = new StringBuilder(" where 1=1 ");
         for (String column : columns) {
-            whereSql.append(" and ").append(column).append(" =?,");
+            whereSql.append(" and ").append(column).append(" =? ");
         }
         whereSql.deleteCharAt(whereSql.length() - 1);
         whereSql.append(";");
@@ -743,31 +1018,38 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
             paramsList.add(paras.toArray());
             paras.remove(paras.size() - 1);
         }
-        return jdbcTemplate.batchUpdate(batchDeleteSqll, paramsList).length;
+        return commonMysqlClient.batchUpdate(batchDeleteSqll, paramsList).length;
     }
 
 
+    @SuppressWarnings("unchecked")
+    public List<BO> getListByIds(Integer... ids) {
+        final String para = SQLUtil.sizeToUnknown(ids.length);
+        final String querySql = SELECT_ALL_FROM_SQL + " where " + deleteFilterSqlTableName + " and " + TABLE_POINT + "id in " + para + ";";
+        return commonMysqlClient.query(querySql, ids, new BaseDaoRowMapper());
+    }
 
-    public Page<BO> getPageByCondition(PO co, com.gaosi.api.common.basedao.PageParam pageParam) {
+    public Page<BO> getPageByCondition(PO co, PageParam pageParam) {
 
         return getPageByCondition(co, pageParam, null);
     }
+
     /**
-     * @param co       co
+     * @param co        co
      * @param pageParam pageInfo
      * @return Page<Po>
      */
     @SuppressWarnings("unchecked")
-    public Page<BO> getPageByCondition(PO co, com.gaosi.api.common.basedao.PageParam pageParam, QueryEnhance queryEnhance) {
+    public Page<BO> getPageByCondition(PO co, PageParam pageParam, QueryEnhance queryEnhance) {
         if (pageParam == null) {
-            pageParam = new com.gaosi.api.common.basedao.PageParam(defaultPageNumber, defaultPageSize, defaultSortOrder);
+            pageParam = new PageParam(defaultPageNumber, defaultPageSize, defaultSortOrder);
         }
+        List<Object> paras = new ArrayList<>(boColumnName.length);
         StringBuilder selectSql = new StringBuilder("select ").append(BASE_COLUMN);
         StringBuilder fromSql = new StringBuilder(FROM_SQL);
-        StringBuilder whereSql = new StringBuilder(getWhereSql(co));
-        StringBuilder orderSql = new StringBuilder(" ORDER BY ");
 
-        List<Object> paras = getParaList(co);
+        StringBuilder whereSql = new StringBuilder(getWhereSql(co, paras, queryEnhance == null ? null : queryEnhance.getFuzzyColumns()));
+        StringBuilder orderSql = new StringBuilder(" ORDER BY ");
         BaseDaoRowMapper mapper = new BaseDaoRowMapper();
         if (queryEnhance != null) {
             if (queryEnhance.getSelectSql() != null) {
@@ -794,7 +1076,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         String querySql = selectSql.append(fromSql).append(whereSql).append(orderSql).toString();
 
         logger.info(querySql);
-        List<BO> boList = jdbcTemplate.query(querySql, paras.toArray(), mapper);
+        List<BO> boList = commonMysqlClient.query(querySql, paras.toArray(), mapper);
         //查询总记录数
         int rows = countByCondition(co);
         //封装返回值
@@ -816,38 +1098,23 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         resultData.setItemTotal(rows); //总记录数
         return resultData;
     }
-    private void handleAssembler(StringBuilder selectSql,
-                                 StringBuilder fromSql,
-                                 StringBuilder whereSql,
-                                 StringBuilder orderSql,
-                                 List<Object> paras,
-                                 BaseDaoRowMapper mapper,
-                                 QueryEnhance<BO> queryEnhance) {
 
-        if (queryEnhance != null) {
-            if (queryEnhance.getSelectSql() != null) {
-                selectSql.append(", ").append(queryEnhance.getSelectSql());
-            }
-            if (queryEnhance.getJoinSql() != null) {
-                fromSql.append(queryEnhance.getJoinSql());
-            }
-            if (queryEnhance.getWhereSql() != null) {
-                whereSql.append(queryEnhance.getWhereSql());
-                if (queryEnhance.getWhereParam() != null
-                        && queryEnhance.getWhereParam().size() > 0) {
-                    paras.addAll(queryEnhance.getWhereParam());
-                }
-            }
-            if (queryEnhance.getOrderSql() != null && orderSql != null) {
-                orderSql.append(queryEnhance.getOrderSql());
-            }
-            if (queryEnhance.getObjectAssembler() != null) {
-                mapper.setObjectAssembler(queryEnhance.getObjectAssembler());
-            }
-        }
-
+    protected Timestamp getCurrentTime() {
+        return new Timestamp(new Date().getTime());
     }
 
+//    /**
+//     * @param co
+//     * @param pageInfo
+//     * @return
+//     */
+//    public int countByPage(PO co, PageParam pageInfo) {
+//        final boolean enableNull = false;
+//        String querySql = "SELECT COUNT(DISTINCT " + FULL_TABLE_NAME + ".id) AS count " + FROM_SQL + getWhereSql(co) + getSqlByPageInfo(pageInfo);
+//        //step 3:查询结果集
+//        Map<String, Object> queryForMap = commonMysqlClient.queryForMap(querySql, getPara(co));
+//        return MapUtils.getIntValue(queryForMap, "count");
+//    }
 
     /**
      * 处理排序条件
@@ -855,14 +1122,14 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
      * @param pageInfo pageInfo
      * @return sample " ORDER BY ${poAliasName}.id"
      */
-    protected String getSqlByPageInfo(com.gaosi.api.common.basedao.PageParam pageInfo, StringBuilder orderBy) {
+    protected String getSqlByPageInfo(PageParam pageInfo, StringBuilder orderBy) {
         if (pageInfo == null) {
             return "";
         }
         String sortSql = "";
         if (pageInfo.getSortOrder() != null
                 && SortTypeEnum.getSqlBySortId(pageInfo.getSortOrder()) != null) {
-            sortSql += (TABLE_POINT+SortTypeEnum.getSqlBySortId(pageInfo.getSortOrder()));
+            sortSql += (TABLE_POINT + SortTypeEnum.getSqlBySortId(pageInfo.getSortOrder()));
         }
         if (pageInfo.getOrderBy() != null && pageInfo.getOrderBy().length() > 4) {
             if (sortSql != null && sortSql.length() > 4) {
@@ -895,6 +1162,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         return orderBy.toString();
     }
 
+
     /**
      * 处理修改信息
      *
@@ -920,7 +1188,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
                     }
                     sql.append(poColumnName[i]).append(" = ? ");
                     para.add(field.get(po));
-                    firstPara=false;
+                    firstPara = false;
                 }
             }
         } catch (IllegalAccessException e) {
@@ -931,6 +1199,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
             para.add(getCurrentTime());
         }
     }
+
 
     /**
      * 处理ORM
@@ -959,19 +1228,9 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         public BO mapRow(ResultSet resultSet, int i) throws SQLException {
             try {
                 PO po = poClassType.newInstance();
-                Field field;
-                try {
-                    for (int j = 0; j < poColumnName.length; j++) {
-                        field = poFields[j];
-                        //close permission validation to enhance performance
-                        field.setAccessible(true);
-                        field.set(po, resultSet.getObject(poColumnName[j]));
-                    }
-                } catch (IllegalAccessException e) {
-                    logger.error(e.getMessage());
-
-                }
+                handleMapping(resultSet, po); //处理ORM
                 BO bo = poToBo(po);
+
                 if (objectAssembler != null) {
                     objectAssembler.assemble(resultSet, bo);
                 }

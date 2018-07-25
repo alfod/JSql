@@ -1,7 +1,7 @@
-package com.gaosi.api.common.basedao;
+package me.alfod.basedao;
 
 import java.io.Serializable;
-import java.util.List;
+import java.util.Map;
 
 /**
  * @author Yang Dong
@@ -25,6 +25,7 @@ public class PageParam  implements Serializable{
     /**
      * 排序规则 enum SortTypeEnum
      */
+    @Deprecated
     private Integer sortOrder;
 
     /**
@@ -32,14 +33,6 @@ public class PageParam  implements Serializable{
      *  例子 : "id asc, update_time desc"
      */
     private String orderBy;
-
-
-
-
-
-
-
-
     /**
      *  排序字段  表字段名字
      */
@@ -49,36 +42,8 @@ public class PageParam  implements Serializable{
      */
     private String sortDirection;
 
-    /**
-     * 拼接到select 后面
-     * 示例： "i.id, i.name as i_name, i.code i_code "
-     */
-    private String selectSql;
 
-    /**
-     * 拼接到join 后面
-     * 示例： "left join institution.institution i
-     */
-    private String joinSql;
-
-    /**
-     * 拼接到where 后面
-     * 示例： "i.update_time > ? and i.update_time < ?"
-     */
-    private String whereSql;
-
-    /**
-     * 拼接到where 后面语句的参数
-     * 示例： { "2015-10-01", "2017-10-01" }
-     */
-    private List<Object> whereParam;
-
-
-    /**
-     * 拼接到order by 后面
-     * 示例： "i.id asc, i.name desc"
-     */
-    private String orderSql;
+    private Map<String,Integer> sortMap;
 
     public String getOrderBy() {
         return orderBy;
@@ -98,47 +63,11 @@ public class PageParam  implements Serializable{
         this.sortOrder = sortOrder;
     }
 
-
-    public List<Object> getWhereParam() {
-        return whereParam;
+    public PageParam(Integer pageNum, Integer pageSize,String sortColumn) {
+        this.pageNum = pageNum;
+        this.pageSize = pageSize;
+        this.sortColumn = sortColumn;
     }
-
-    public void setWhereParam(List<Object> whereParam) {
-        this.whereParam = whereParam;
-    }
-
-    public String getSelectSql() {
-        return selectSql;
-    }
-
-    public void setSelectSql(String selectSql) {
-        this.selectSql = selectSql;
-    }
-
-    public String getJoinSql() {
-        return joinSql;
-    }
-
-    public void setJoinSql(String joinSql) {
-        this.joinSql = joinSql;
-    }
-
-    public String getWhereSql() {
-        return whereSql;
-    }
-
-    public void setWhereSql(String whereSql) {
-        this.whereSql = whereSql;
-    }
-
-    public String getOrderSql() {
-        return orderSql;
-    }
-
-    public void setOrderSql(String orderSql) {
-        this.orderSql = orderSql;
-    }
-
 
     public Integer getPageNum() {
         return pageNum;
