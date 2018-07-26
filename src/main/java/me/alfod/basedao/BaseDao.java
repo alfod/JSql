@@ -1,7 +1,8 @@
-package me.alfod.basedao;
+package com.gaosi.api.common.basedao;
 
 import com.aixuexi.thor.util.Page;
 import com.google.common.collect.Lists;
+import me.alfod.basedao.ObjectAssembler;
 import org.apache.commons.collections4.MapUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -583,6 +584,13 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
                     //excluded 'deleted' filed ,for the default query option is 'deleted=0'
                     if (fuzzyColumns != null && fuzzyColumns.contains(columnName)) {
                         whereSql.append("  and ").append(TABLE_POINT).append(poColumnName[i]).append(" like ?  ");
+                        if (value instanceof CharSequence) {
+//                            if (((CharSequence) value).length() > 0) {
+                            value = "%" + value + "%";
+//                            }else{
+//                                value = "%";
+//                            }
+                        }
                     } else {
                         whereSql.append("  and ").append(TABLE_POINT).append(poColumnName[i]).append(" = ?  ");
                     }
