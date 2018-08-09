@@ -2,7 +2,7 @@ package com.gaosi.api.common.basedao;
 
 import com.aixuexi.thor.util.Page;
 import com.google.common.collect.Lists;
-import me.alfod.basedao.ObjectAssembler;
+import me.alfod.basedao.*;
 import org.apache.commons.collections4.MapUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -514,6 +514,17 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
      * 根据指定字段更新
      *
      * @param bo        bo
+     * @param whereColumns where list
+     * @return count
+     */
+    public int updateByColumn(PO po, String... whereColumns) {
+        return updateByColumn(po, Arrays.asList(whereColumns));
+    }
+
+    /**
+     * 根据指定字段更新
+     *
+     * @param bo        bo
      * @param whereList where list
      * @return count
      */
@@ -604,7 +615,28 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         return whereSql.toString();
     }
 
+    public int countByCondition(PO po, QueryEnhance queryEnhance) {
 
+        List<Object> paras = new ArrayList<>(boColumnName.length);
+        StringBuilder selectSql = new StringBuilder(" select count(*) as count ");
+        StringBuilder fromSql = new StringBuilder(FROM_SQL);
+        StringBuilder whereSql = new StringBuilder(getWhereSql(po, paras, queryEnhance == null ? null : queryEnhance.getFuzzyColumns()));
+        if (queryEnhance != null) {
+            if (queryEnhance.getJoinSql() != null) {
+                fromSql.append(queryEnhance.getJoinSql());
+            }
+            if (queryEnhance.getWhereSql() != null) {
+                whereSql.append(queryEnhance.getWhereSql());
+                if (queryEnhance.getWhereParam() != null
+                        && queryEnhance.getWhereParam().size() > 0) {
+                    paras.addAll(queryEnhance.getWhereParam());
+                }
+            }
+        }
+        String querySql = selectSql.append(fromSql).append(whereSql).toString();
+        Map<String, Object> queryForMap = commonMysqlClient.queryForMap(querySql.toString(), paras.toArray());
+        return MapUtils.getIntValue(queryForMap, "count");
+    }
     public int countByCondition(PO po) {
         List<Object> paras = new ArrayList<>(boColumnName.length);
         StringBuilder sql = new StringBuilder("SELECT COUNT(*) AS count " + FROM_SQL).append(getWhereSql(po, paras, null));
@@ -627,6 +659,35 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         deleteSql += " WHERE id = ?  ";
         paras.add(id);
         return commonMysqlClient.update(deleteSql, paras.toArray());
+    }
+
+    @SuppressWarnings("unchecked")
+    public int deleteByKeyValue(Object... values) {
+        if (values.length == 0 || values.length % 2 != 0) {
+            throw new RuntimeException("参数不存在或者参数数量为奇数");
+        }
+
+        if (!deletedExist) {
+            throw new RuntimeException("deleted 字段不存在, 无法使用此函数");
+        }
+        StringBuilder whereSql = new StringBuilder(" 1= 1 ");
+        Object value;
+        List<Object> paras = Lists.newLinkedList();
+        for (int i = 0; i < values.length / 2; ++i) {
+            whereSql.append(" and ").append(TABLE_POINT).append("`").append(values[2 * i]).append("`");
+            value = values[2 * i + 1];
+            if (value instanceof Collection) {
+                paras.addAll((Collection) value);
+                whereSql.append(" in ").append(SQLUtil.sizeToUnknown(((Collection) value).size()));
+            } else {
+                paras.add(value);
+                whereSql.append("=? ");
+            }
+        }
+        String sql = " update " + TABLE_NAME + " set deleted = 1  WHERE " + deleteFilterSqlTableName +
+                " and " + whereSql.toString();
+        int sqlResult = commonMysqlClient.update(sql, paras.toArray());
+        return sqlResult;
     }
 
 
@@ -1086,7 +1147,7 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         logger.info(querySql);
         List<BO> boList = commonMysqlClient.query(querySql, paras.toArray(), mapper);
         //查询总记录数
-        int rows = countByCondition(co);
+        int rows = countByCondition(co,queryEnhance);
         //封装返回值
         Page<BO> resultData = new Page<>();
 
