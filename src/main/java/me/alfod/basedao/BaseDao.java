@@ -56,6 +56,8 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
     protected final String UPDATE_TIME = "update_time";
     protected final String CREATE_TIME = "create_time";
     protected final String OPERATOR_ID = "operator_id";
+    protected final String UPDATER_ID = "operator_id";
+    protected final String CREATOR_ID = "operator_id";
     private final Map<String, Field> poFieldNameMap;
     private final Map<String, Field> boFieldNameMap;
     private final Map<Field, String> boNameFieldMap;
@@ -69,6 +71,8 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
     private boolean createTimeExist = false;
     private boolean deletedExist = false;
     private boolean operatorIdExist = false;
+    private boolean updaterIdExist = false;
+    private boolean creatorIdExist = false;
 
     @SuppressWarnings("unchecked")
     public BaseDao() {
@@ -148,6 +152,13 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
             }
             if (OPERATOR_ID.equals(poColumnName[i])) {
                 operatorIdExist = true;
+            }
+
+            if (CREATOR_ID.equals(poColumnName[i])) {
+                creatorIdExist = true;
+            }
+            if (UPDATER_ID.equals(poColumnName[i])) {
+                updaterIdExist = true;
             }
 
 
@@ -652,6 +663,12 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
             deleteSql += ", operator_id = ? ";
             paras.add(operatorId);
         }
+
+        if (updaterIdExist && operatorId != null) {
+            deleteSql += ", " + UPDATER_ID + " = ? ";
+            paras.add(operatorId);
+        }
+
         if (updateTimeExist) {
             deleteSql += " , update_time = ? ";
             paras.add(getCurrentTime());
@@ -661,7 +678,51 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
         return commonMysqlClient.update(deleteSql, paras.toArray());
     }
 
+    public int deleteByKeyValue(Integer operatorId, Object... values) {
+        if (values.length == 0 || values.length % 2 != 0) {
+            throw new RuntimeException("参数不存在或者参数数量为奇数");
+        }
+
+        if (!deletedExist) {
+            throw new RuntimeException("deleted 字段不存在, 无法使用此函数");
+        }
+        List<Object> paras = Lists.newLinkedList();
+        String selectSql = " update " + TABLE_NAME + " set deleted = 1 ";
+        if (operatorId != null) {
+            if (operatorIdExist) {
+                selectSql += " , operator_id = ? ";
+                paras.add(operatorId);
+            }
+            if (updaterIdExist) {
+                selectSql += " , updater_id = ? ";
+                paras.add(operatorId);
+            }
+        }
+
+        StringBuilder whereSql = new StringBuilder(" 1= 1 ");
+        Object value;
+
+        for (int i = 0; i < values.length / 2; ++i) {
+            whereSql.append(" and ").append(TABLE_POINT).append("`").append(values[2 * i]).append("`");
+            value = values[2 * i + 1];
+            if (value instanceof Collection) {
+                paras.addAll((Collection) value);
+                whereSql.append(" in ").append(SQLUtil.sizeToUnknown(((Collection) value).size()));
+            } else {
+                paras.add(value);
+                whereSql.append("=? ");
+            }
+        }
+
+
+        String sql = selectSql + "  WHERE " + deleteFilterSqlTableName +
+                " and " + whereSql.toString();
+        int sqlResult = commonMysqlClient.update(sql, paras.toArray());
+        return sqlResult;
+    }
+
     @SuppressWarnings("unchecked")
+    @Deprecated
     public int deleteByKeyValue(Object... values) {
         if (values.length == 0 || values.length % 2 != 0) {
             throw new RuntimeException("参数不存在或者参数数量为奇数");
@@ -1073,21 +1134,22 @@ public abstract class BaseDao<PO, CO extends PO, BO extends PO> {
     }
 
     public int batchDeleteById(Collection<Integer> ids, Integer operatorId) {
-        String batchDeleteSqll = "UPDATE " + FULL_TABLE_NAME + " SET deleted=1, operator_id=? ";
-        List paras = new LinkedList();
-        paras.add(operatorId);
+        if (ids == null || ids.isEmpty()) {
+            return 0;
+        }
+        String batchDeleteSqll = "UPDATE " + FULL_TABLE_NAME + " SET deleted=1 ";
+        List<Object> paras = new LinkedList();
         if (updateTimeExist) {
             batchDeleteSqll += ", update_time=? ";
             paras.add(getCurrentTime());
         }
-        batchDeleteSqll += " WHERE id = ?;";
-        List<Object[]> paramsList = new ArrayList<>();
-        for (Integer id : ids) {
-            paras.add(id);
-            paramsList.add(paras.toArray());
-            paras.remove(paras.size() - 1);
+        if (operatorIdExist) {
+            batchDeleteSqll += ", operator_id=? ";
+            paras.add(operatorId);
         }
-        return commonMysqlClient.batchUpdate(batchDeleteSqll, paramsList).length;
+        batchDeleteSqll += " WHERE id in "+SQLUtil.sizeToUnknown(ids.size());
+        paras.addAll(ids);
+        return commonMysqlClient.update(batchDeleteSqll, paras.toArray());
     }
 
 
